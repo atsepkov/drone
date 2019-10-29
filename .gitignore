@@ -1,0 +1,6 @@
+current/
+last_successful/
+node_modules/
+*~
+*.swp
+*.swo
