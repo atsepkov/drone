@@ -99,11 +99,11 @@ below listing other stories (Yahoo actually didn't do that, they used cryptic cl
 probably give proper IDs and avoid mangling ID/class names in dev environment given the good developer that you are). Eliminating
 false positives is now as simple as changing the test to:
 
-```
+```javascript
 drone.test('load yahoo', {
-  waitFor:  '#mega-banner-close',
+  waitFor: '#mega-banner-close',
   ignore: ['#trending-now', '.thumbnail', '#stories'],
-  actions: async (page) => {
+  actions: async page => {
     await page.goto('https://yahoo.com');
   },
 });
