@@ -8,6 +8,12 @@ const expect = require('expect.js');
 
 const DEFAULT_TIMEOUT = 30000;
 
+// setup
+let browser;
+let page;
+let defaultTimeout = DEFAULT_TIMEOUT; // default timeout for all tests
+let testDir = __dirname; // main test directory
+
 // initialize directories and config
 const workDir = getDir('current');
 const goldenDir = getDir('last_successful');
@@ -24,12 +30,6 @@ const goldenConfig = readConfig(goldenDir) || {
   tests: {}, // this empty hash is for failing gracefully if there are no previous entries
 };
 cleanDir(workDir);
-
-// setup
-let browser;
-let page;
-let defaultTimeout = DEFAULT_TIMEOUT; // default timeout for all tests
-let testDir = __dirname; // main test directory
 
 if (!global.it) {
   throw new Error(
