@@ -16,6 +16,10 @@ This tool helps me find these breakages quickly in a semi-automated way. Here is
 - any increase in load time greater than 20% results in a failed overall run
 - you can forgive individual failures using config, forcing a new successful run
 
+## Installation
+
+    npm install test-drone
+
 ## Usage
 
 The test module is meant to be used within a test framework (Jest, Jasmine, and Mocha were tested, but most should work). Note
@@ -26,7 +30,7 @@ searches for apples, checks the 2nd page of results, and then the images tab. Fo
 and compares load time against previous run:
 
 ```javascript
-const drone = require('./drone');
+const drone = require('drone');
 
 describe('my test example', () => {
   beforeAll(async () => {

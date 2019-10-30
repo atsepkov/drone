@@ -1,6 +1,6 @@
 {
-  "name": "Drone",
-  "version": "0.0.1",
+  "name": "test-drone",
+  "version": "0.0.2",
   "description": "Test framework for the lazy",
   "main": "index.js",
   "scripts": {
