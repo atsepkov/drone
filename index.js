@@ -11,12 +11,12 @@ const DEFAULT_TIMEOUT = 30000;
 // setup
 let browser;
 let page;
+let workDir;
+let goldenDir;
 let defaultTimeout = DEFAULT_TIMEOUT; // default timeout for all tests
 let testDir = __dirname; // main test directory
 
 // initialize directories and config
-const workDir = getDir('current');
-const goldenDir = getDir('last_successful');
 const workConfig = {
   tests: {
     /* expected test times will be placed here */
@@ -29,7 +29,6 @@ const goldenConfig = readConfig(goldenDir) || {
   ],
   tests: {}, // this empty hash is for failing gracefully if there are no previous entries
 };
-cleanDir(workDir);
 
 if (!global.it) {
   throw new Error(
@@ -58,6 +57,9 @@ const setup = async (options = {}) => {
   if (options.testDirectory) {
     testDir = options.testDirectory;
   }
+  workDir = getDir('current');
+  goldenDir = getDir('last_successful');
+  cleanDir(workDir);
 
   pageEnhancements.forEach(f => (page[f.name] = f));
 };
@@ -209,8 +211,6 @@ const testFunction = (name, options) => {
   const timeout = options.timeout || defaultTimeout;
   const expectedDuration = 2000;
   const imageName = getImageName(name);
-  const goldenImage = path.join(goldenDir, imageName);
-  const workImage = path.join(workDir, imageName);
 
   // load time test
   const definition = it(
@@ -221,6 +221,8 @@ const testFunction = (name, options) => {
           'Browser has not been initialized, perhaps you forgot to run drone.setup()?',
         );
       }
+      const goldenImage = path.join(goldenDir, imageName);
+      const workImage = path.join(workDir, imageName);
       return new Promise(async (resolve, reject) => {
         const start = Date.now();
         options.actions && (await options.actions(page));
