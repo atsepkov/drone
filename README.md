@@ -96,7 +96,7 @@ This is exactly the kinds of changes this test framework intends to find. The ou
       go to next search page  1364           1406
       go to images tab        1772           1865
 
-      8 tests failed.
+      4 tests failed.
 
 
       0 passing (9s)

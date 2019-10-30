@@ -262,7 +262,6 @@ const testFunction = (name, options) => {
         }
       }).catch(async e => {
         // document this failure, grab image for investigation and rethrow
-        failedTests++;
         if (!workConfig.tests[name]) {
           workConfig.tests[name] = 'TIMEOUT';
         }
