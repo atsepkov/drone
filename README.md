@@ -4,8 +4,8 @@ Tests done against different websites, rendering differences highlighted in red:
 ![investomation example](https://i.imgur.com/RjTcl3It.png 'Investomation')
 ![yahoo example](https://i.imgur.com/K8XlD57t.png 'Yahoo')
 
-Drone is a webapp UI test framework for lazy people, like myself. I should write unit tests, but often I don't have
-time to, or am too lazy to. When my web apps break, they typically break in predictable ways, as a result of my refactoring.
+Drone is a webapp UI test framework for lazy people, like myself. I should write more unit tests, but I'm a horrible person,
+so I don't. When my web apps break, they typically break in predictable ways, as a result of my refactoring.
 This tool helps me find these breakages quickly in a semi-automated way. Here is how it works:
 
 - you define a set of pages to navigate to and set of actions to perform
@@ -87,22 +87,32 @@ page (load_yahoo-diff.png), we can inspect problematic areas:
 
 ![diff example](https://i.imgur.com/K8XlD57.png 'Diff Example')
 
-From above image we can see that stories in "Trending Now" section as well as screenshots below the main story triggered a false
-positive by loading in a different order from the golden image. We can easily fix that by finding the relevant selectors and telling
-Drone to ignore those elements (yes, I'm aware that given the highly dynamic nature of Yahoo front page the rest of the elements
-will change within a few hours or a day as well - but let's ignore that for now since that will probably not be the case for the
-web app you're testing). Let's assume that Yahoo gave the ID of `#trending-now` to the section in the top-right and a class of
-`.thumbnail` to every element below the main story (Yahoo actually didn't do that, they used cryptic classes and no IDs instead
-(bad Yahoo), but you will probably give proper IDs and avoid mangling names in dev given the good developer you are). Eliminating
+From above image we can see that stories in "Trending Now" section as well as screenshots below the main story, and the list of other
+stores triggered a false positive by loading in a different order from the golden image. We can easily fix that by finding the
+relevant selectors and telling Drone to ignore those elements (yes, I'm aware that given the highly dynamic nature of Yahoo front
+page the rest of the elements will change within a few hours or a day as well - but let's ignore that for now since that will
+probably not be the case for the web app you're testing). Let's assume that Yahoo gave the ID of `#trending-now` to the section
+in the top-right, a class of `.thumbnail` to every thumbnail element below the main story and an ID of `#stories` to the container
+below listing other stories (Yahoo actually didn't do that, they used cryptic classes and no IDs instead (bad Yahoo), but you will
+probably give proper IDs and avoid mangling ID/class names in dev environment given the good developer that you are). Eliminating
 false positives is now as simple as changing the test to:
 
     drone.test('load yahoo', {
       waitFor:  '#mega-banner-close',
-      ignore: ['#trending-now', '.thumbnail'],
+      ignore: ['#trending-now', '.thumbnail', '#stories'],
       actions: async (page) => {
         await page.goto('https://yahoo.com');
       },
     });
+
+Remove golden version of the image and rerun the test, these elements will now be ignored from the diff.
+
+Finally, let's say you're testing a website that takes a long time to load. Your coworker (not you, of course) wrote a bad DB
+query that takes over 30 seconds to execute. Your website entertains regular users with a loading screen, but Drone is not so
+easily amused. The test runner times out after 30 seconds instead of waiting for your query to return. You can remedy this
+situation as well by setting a higher `timeout` for your individual test. Similarly, if the same coworker wrote all of your
+DB queries, and they ALL take over 30 seconds to run, you can set `defaultTimeout` during setup call that will apply to all
+tests that don't explicitly define their own.
 
 ## Complete API
 
@@ -110,6 +120,7 @@ To make usage simpler, the rest of this guide describes drone API. The params ar
 you an idea of which field take what arguments and which fields are optional.
 
     drone.setup(options: {
+      defaultTimeout?: number, // default timeout for all tests (defaults to 30,000 ms)
       viewport?: { width: number, height: number }
     })
 
