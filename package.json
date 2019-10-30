@@ -17,5 +17,10 @@
     "pixelmatch": "^5.1.0",
     "pngjs": "^3.4.0",
     "puppeteer": "^2.0.0"
+  },
+  "devDependencies": {
+    "jasmine": "^3.5.0",
+    "jest": "^24.9.0",
+    "mocha": "^6.2.2"
   }
 }

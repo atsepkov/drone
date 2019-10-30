@@ -9,16 +9,19 @@ const expect = require('expect.js');
 const DEFAULT_TIMEOUT = 30000;
 
 // initialize directories and config
-const workDir = getDir('current')
+const workDir = getDir('current');
 const goldenDir = getDir('last_successful');
 const workConfig = {
-  tests: { /* expected test times will be placed here */ }
-}
+  tests: {
+    /* expected test times will be placed here */
+  },
+};
 const goldenConfig = readConfig(goldenDir) || {
-  resolutions: [ // resolutions that will be tested
-    { width: 1280, height: 800 }
+  resolutions: [
+    // resolutions that will be tested
+    {width: 1280, height: 800},
   ],
-  tests: {} // this empty hash is for failing gracefully if there are no previous entries
+  tests: {}, // this empty hash is for failing gracefully if there are no previous entries
 };
 cleanDir(workDir);
 
@@ -28,59 +31,75 @@ let page;
 let defaultTimeout = DEFAULT_TIMEOUT;
 
 if (!global.it) {
-  throw new Error('Drone module must be run from within a test framework (Jest, Mocha, Jasmine, etc.)');
+  throw new Error(
+    'Drone module must be run from within a test framework (Jest, Mocha, Jasmine, etc.)',
+  );
 }
 
-const getImageName = (name) => {
+const getImageName = name => {
   return name.replace(/\s/g, '_') + '.png';
-}
+};
 
-const setup = async (options) => {
-  browser = await puppeteer.launch({args: ['--no-sandbox', '--disable-setuid-sandbox']});
+const setup = async options => {
+  browser = await puppeteer.launch({
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
   page = await browser.newPage();
-  await page.setViewport(options.viewport || {
-    width: 1280,
-    height: 800
-  })
+  await page.setViewport(
+    options.viewport || {
+      width: 1280,
+      height: 800,
+    },
+  );
   if (options.defaultTimeout) {
     defaultTimeout = options.defaultTimeout;
   }
 
-  pageEnhancements.forEach(f => page[f.name] = f)
-}
+  pageEnhancements.forEach(f => (page[f.name] = f));
+};
 
 let failedTests = 0;
 const teardown = async () => {
   if (!browser) {
-    throw new Error('Browser has not been initialized, perhaps you forgot to run drone.setup()?');
+    throw new Error(
+      'Browser has not been initialized, perhaps you forgot to run drone.setup()?',
+    );
   }
   await browser.close();
 
   // show test metrics
-  console.table(Object.keys(workConfig.tests).map(testName => {
-    return {
-      '\ntest': testName,
-      'previous (ms)': goldenConfig.tests[testName],
-      'current (ms)': workConfig.tests[testName]
-    };
-  }));
+  console.table(
+    Object.keys(workConfig.tests).map(testName => {
+      return {
+        '\ntest': testName,
+        'previous (ms)': goldenConfig.tests[testName],
+        'current (ms)': workConfig.tests[testName],
+      };
+    }),
+  );
 
   if (!failedTests) {
     // all tests pass, nominate current run as the new golden
     Object.keys(workConfig.tests).forEach(test => {
       const imageName = getImageName(test);
-      fs.rename(path.join(workDir, imageName), path.join(goldenDir, imageName), (e) => {
-        if (e) {
-          console.log(`Error moving image "${imageName}" to golden directory "${goldenDir}".`);
-        }
-      });
+      fs.rename(
+        path.join(workDir, imageName),
+        path.join(goldenDir, imageName),
+        e => {
+          if (e) {
+            console.log(
+              `Error moving image "${imageName}" to golden directory "${goldenDir}".`,
+            );
+          }
+        },
+      );
     });
     workConfig.resolutions = goldenDir.resolutions;
     writeConfig(goldenDir, workConfig);
   } else {
     console.log(`${failedTests} tests failed.`);
   }
-}
+};
 
 // returns absolute path to directory for the build, if directory doesn't exist, it will be created
 function getDir(build) {
@@ -95,12 +114,14 @@ function getDir(build) {
 function cleanDir(dirpath) {
   const files = fs.readdirSync(dirpath);
   files.forEach(file => {
-    fs.unlink(path.join(dirpath, file), (e) => {
+    fs.unlink(path.join(dirpath, file), e => {
       if (e) {
-        console.log(`Error deleting "${file}" in "${dirpath}", failed to clean work directory.`)
+        console.log(
+          `Error deleting "${file}" in "${dirpath}", failed to clean work directory.`,
+        );
       }
     });
-  })
+  });
 }
 
 // logic for reading build config
@@ -113,8 +134,11 @@ function readConfig(dirpath) {
 }
 
 // logic for writing build config
-function writeConfig (dirpath, data) {
-  fs.writeFileSync(path.join(dirpath, 'config.json'), JSON.stringify(data, null, 2));
+function writeConfig(dirpath, data) {
+  fs.writeFileSync(
+    path.join(dirpath, 'config.json'),
+    JSON.stringify(data, null, 2),
+  );
 }
 
 // framework detection
@@ -135,11 +159,13 @@ const pageEnhancements = [
     if (linkHandlers.length === 1) {
       await linkHandlers[0].click();
     } else if (linkHandlers.length > 1) {
-      throw new Error(`Ambiguous click command, ${linkHandlers.length} elements with text "${text}" found.`)
+      throw new Error(
+        `Ambiguous click command, ${linkHandlers.length} elements with text "${text}" found.`,
+      );
     } else {
-      throw new Error(`No elements with text "${text}" found.`)
+      throw new Error(`No elements with text "${text}" found.`);
     }
-  }
+  },
 ];
 
 // actual test
@@ -151,82 +177,110 @@ const testFunction = (name, options) => {
   const workImage = path.join(workDir, imageName);
 
   // load time test
-  const definition = it(name, async () => {
-    if (!page) {
-      throw new Error('Browser has not been initialized, perhaps you forgot to run drone.setup()?');
-    }
-    return new Promise(async (resolve, reject) => {
-      const start = Date.now()
-      options.actions && await options.actions(page);
-      if (options.waitFor) {
-        // wait until desired element is loaded
-        await page.waitForSelector(options.waitFor, {
-          timeout: timeout
-        });
+  const definition = it(
+    name,
+    async () => {
+      if (!page) {
+        throw new Error(
+          'Browser has not been initialized, perhaps you forgot to run drone.setup()?',
+        );
       }
-      const operationDuration = Date.now() - start;
-      workConfig.tests[name] = operationDuration;
-
-      // hide elements we don't want
-      if (options.ignore) {
-        await page.evaluate((elementsToOmit) => {
-          elementsToOmit.forEach((selector) => {
-            let elements = document.querySelectorAll(selector);
-            elements.forEach((element) => element.style.visibility = 'hidden');
+      return new Promise(async (resolve, reject) => {
+        const start = Date.now();
+        options.actions && (await options.actions(page));
+        if (options.waitFor) {
+          // wait until desired element is loaded
+          await page.waitForSelector(options.waitFor, {
+            timeout: timeout,
           });
-        }, options.ignore);
-      }
+        }
+        const operationDuration = Date.now() - start;
+        workConfig.tests[name] = operationDuration;
 
-      await page.screenshot({path: workImage});
+        // hide elements we don't want
+        if (options.ignore) {
+          await page.evaluate(elementsToOmit => {
+            elementsToOmit.forEach(selector => {
+              let elements = document.querySelectorAll(selector);
+              elements.forEach(
+                element => (element.style.visibility = 'hidden'),
+              );
+            });
+          }, options.ignore);
+        }
 
-      try {
-        const img1 = PNG.sync.read(fs.readFileSync(goldenImage));
-        const img2 = PNG.sync.read(fs.readFileSync(workImage));
-        const { width, height } = img1;
-        const diff = new PNG({width, height});
-        const pixelCountDiff = pixelmatch(img1.data, img2.data, diff.data, width, height, { threshold: 0.1 });
-        const diffImageName = getImageName(name + '-diff');
-        fs.writeFileSync(path.join(workDir, diffImageName), PNG.sync.write(diff));
+        await page.screenshot({path: workImage});
 
         try {
-          expect(pixelCountDiff).to.be(0);
+          const img1 = PNG.sync.read(fs.readFileSync(goldenImage));
+          const img2 = PNG.sync.read(fs.readFileSync(workImage));
+          const {width, height} = img1;
+          const diff = new PNG({width, height});
+          const pixelCountDiff = pixelmatch(
+            img1.data,
+            img2.data,
+            diff.data,
+            width,
+            height,
+            {threshold: 0.1},
+          );
+          const diffImageName = getImageName(name + '-diff');
+          fs.writeFileSync(
+            path.join(workDir, diffImageName),
+            PNG.sync.write(diff),
+          );
 
-          if (operationDuration > expectedDuration * 1.2) {
+          try {
+            expect(pixelCountDiff).to.be(0);
+
+            if (operationDuration > expectedDuration * 1.2) {
+              failedTests++;
+              reject(
+                new Error(
+                  `Operation took ${operationDuration}ms, expected to take around ${expectedDuration}ms.`,
+                ),
+              );
+            } else {
+              resolve();
+            }
+          } catch (e) {
             failedTests++;
-            reject(new Error(`Operation took ${operationDuration}ms, expected to take around ${expectedDuration}ms.`));
-          } else {
-            resolve();
+            reject(
+              new Error(
+                `Actual differs from golden by ${pixelCountDiff} pixels (see ${diffImageName}).`,
+              ),
+            );
           }
         } catch (e) {
-          failedTests++;
-          reject(new Error(`Actual differs from golden by ${pixelCountDiff} pixels (see ${diffImageName}).`));
+          if (e.code === 'ENOENT' && e.path === goldenImage) {
+            // this is the first time we're running this test, pass
+            resolve();
+          } else {
+            failedTests++;
+            reject(e);
+          }
         }
-      } catch (e) {
-        if (e.code === 'ENOENT' && e.path === goldenImage) {
-          // this is the first time we're running this test, pass
-          resolve();
-        } else {
-          failedTests++;
-          reject(e);
+      }).catch(async e => {
+        // document this failure, grab image for investigation and rethrow
+        failedTests++;
+        if (!workConfig.tests[name]) {
+          workConfig.tests[name] = 'TIMEOUT';
         }
-      }
-    }).catch(async (e) => {
-      // document this failure, grab image for investigation and rethrow
-      failedTests++;
-      workConfig.tests[name] = 'FAILED';
-      await page.screenshot({path: workImage});
-      throw e;
-    });
-  }, timeout); // for jest and jasmine
+        await page.screenshot({path: workImage});
+        throw e;
+      });
+    },
+    timeout,
+  ); // for jest and jasmine
 
   // for mocha
   if (definition.timeout instanceof Function) {
-    definition.timeout(timeout)
+    definition.timeout(timeout);
   }
 };
 
 module.exports = {
   setup,
   teardown,
-  test: testFunction
-}
+  test: testFunction,
+};

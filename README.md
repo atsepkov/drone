@@ -81,9 +81,50 @@ describe('my test example', () => {
 
 Running the above test first time will pass. Running it a 2nd time will fail, however, because Yahoo randomizes advertisements, and
 placement of images and search results slightly. For Yahoo, this randomization is intentional, but for you that may not be the case.
-This is exactly the kinds of changes this test framework intends to find.
+This is exactly the kinds of changes this test framework intends to find. The output of your 2nd run will look something like this:
 
-If you too, however, have portions of your webpage render differently after each reload (i.e. advertisements), you can tell the test
+      my test example
+          1) load yahoo
+          2) search for apples
+          3) go to next search page
+          4) go to images tab
+
+      test                    previous (ms)  current (ms)
+      ----------------------  -------------  ------------
+      load yahoo              2071           1738
+      search for apples       902            938
+      go to next search page  1364           1406
+      go to images tab        1772           1865
+
+      8 tests failed.
+
+
+      0 passing (9s)
+      4 failing
+
+      1) my test example
+           load yahoo:
+         Error: Actual differs from golden by 15186 pixels (see load_yahoo-diff.png).
+          at Promise (index.js:202:18)
+
+      2) my test example
+           search for apples:
+         Error: Actual differs from golden by 1383 pixels (see search_for_apples-diff.png).
+          at Promise (index.js:202:18)
+
+      3) my test example
+           go to next search page:
+         Error: Actual differs from golden by 893 pixels (see go_to_next_search_page-diff.png).
+          at Promise (index.js:202:18)
+
+      4) my test example
+           go to images tab:
+         Error: Actual differs from golden by 427337 pixels (see go_to_images_tab-diff.png).
+          at Promise (index.js:202:18)
+
+The above tells us run times for each test, as well as why each failed, and which image to check for troubleshooting.
+
+If like Yahoo, you also have portions of your webpage render differently after each reload (i.e. advertisements), you can tell the test
 to ignore them in the diff by passing a list of selectors to ignore on the page. For example, by looking at the diff of the first
 page (load_yahoo-diff.png), we can inspect problematic areas:
 
