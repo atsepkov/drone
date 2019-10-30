@@ -1,6 +1,6 @@
 # Drone
 
-Tests done against different websites, rendering differences highlighted in red:
+Tests against different websites, rendering differences highlighted in red:
 
 ![investomation example](https://i.imgur.com/RjTcl3It.png 'Investomation')
 ![yahoo example](https://i.imgur.com/K8XlD57t.png 'Yahoo')
@@ -30,7 +30,7 @@ searches for apples, checks the 2nd page of results, and then the images tab. Fo
 and compares load time against previous run:
 
 ```javascript
-const drone = require('drone');
+const drone = require('test-drone');
 
 describe('my test example', () => {
   beforeAll(async () => {
@@ -60,9 +60,9 @@ describe('my test example', () => {
 
   drone.test('go to next search page', {
     actions: async page => {
-      let nextPage = await page.waitForSelector('a.next');
+      let nextPageLink = await page.waitForSelector('a.next');
       await Promise.all([
-        nextPage.click(),
+        nextPageLink.click(),
         page.waitForNavigation({waitUntil: 'networkidle0'}),
       ]);
     },
@@ -70,8 +70,9 @@ describe('my test example', () => {
 
   drone.test('go to images tab', {
     actions: async page => {
+      let imagesTabLink = await page.elementWithText('Images');
       await Promise.all([
-        page.clickElementWithText('Images'),
+        imagesTabLink.click(),
         page.waitForNavigation({waitUntil: 'networkidle0'}),
       ]);
     },
@@ -171,6 +172,7 @@ you an idea of which field take what arguments and which fields are optional.
 ### Drone
 
     drone.setup(options: {
+      testDirectory?: string, // absolute path to directory where test data will be placed (defaults to node_modules/test-drone)
       defaultTimeout?: number, // default timeout for all tests (defaults to 30,000 ms)
       viewport?: { width: number, height: number }
     })

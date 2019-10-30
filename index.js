@@ -28,7 +28,8 @@ cleanDir(workDir);
 // setup
 let browser;
 let page;
-let defaultTimeout = DEFAULT_TIMEOUT;
+let defaultTimeout = DEFAULT_TIMEOUT; // default timeout for all tests
+let testDir = __dirname; // main test directory
 
 if (!global.it) {
   throw new Error(
@@ -40,7 +41,7 @@ const getImageName = name => {
   return name.replace(/\s/g, '_') + '.png';
 };
 
-const setup = async options => {
+const setup = async (options = {}) => {
   browser = await puppeteer.launch({
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
@@ -53,6 +54,9 @@ const setup = async options => {
   );
   if (options.defaultTimeout) {
     defaultTimeout = options.defaultTimeout;
+  }
+  if (options.testDirectory) {
+    testDir = options.testDirectory;
   }
 
   pageEnhancements.forEach(f => (page[f.name] = f));
@@ -103,7 +107,7 @@ const teardown = async () => {
 
 // returns absolute path to directory for the build, if directory doesn't exist, it will be created
 function getDir(build) {
-  const absolutePath = path.join(__dirname, build);
+  const absolutePath = path.join(testDir, build);
   if (!fs.existsSync(absolutePath)) {
     fs.mkdirSync(absolutePath);
   }
