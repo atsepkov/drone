@@ -126,7 +126,7 @@ The above tells us run times for each test, as well as why each failed, and whic
 
 If like Yahoo, you also have portions of your webpage render differently after each reload (i.e. advertisements), you can tell the test
 to ignore them in the diff by passing a list of selectors to ignore on the page. For example, by looking at the diff of the first
-page (load_yahoo-diff.png), we can inspect problematic areas:
+page (`load_yahoo-diff.png`), we can inspect problematic areas:
 
 ![diff example](https://i.imgur.com/K8XlD57.png 'Diff Example')
 
