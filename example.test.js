@@ -44,8 +44,9 @@ describe('my test example', () => {
 
   drone.test('go to images tab', {
     actions: async page => {
+      let imagesTab = await page.elementWithText('Images');
       await Promise.all([
-        page.clickElementWithText('Images'),
+        imagesTab.click(),
         page.waitForNavigation({waitUntil: 'networkidle0'}),
       ]);
     },

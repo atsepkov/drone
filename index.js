@@ -153,11 +153,15 @@ const escapeXpathString = str => {
   return `concat('${splitedQuotes}', '')`;
 };
 const pageEnhancements = [
-  async function clickElementWithText(text) {
+  /*
+   * specify element to return by exact text within the element (text must be unique,
+   * element must be present, or an error will be thrown).
+   */
+  async function elementWithText(text) {
     const escapedText = escapeXpathString(text);
     const linkHandlers = await this.$x(`//a[contains(text(), ${escapedText})]`);
     if (linkHandlers.length === 1) {
-      await linkHandlers[0].click();
+      return linkHandlers[0];
     } else if (linkHandlers.length > 1) {
       throw new Error(
         `Ambiguous click command, ${linkHandlers.length} elements with text "${text}" found.`,
@@ -165,6 +169,34 @@ const pageEnhancements = [
     } else {
       throw new Error(`No elements with text "${text}" found.`);
     }
+  },
+  /*
+   * return all elements with given text
+   */
+  async function allElementsWithText(text) {
+    const escapedText = escapeXpathString(text);
+    const linkHandlers = await this.$x(`//a[contains(text(), ${escapedText})]`);
+    return linkHandlers;
+  },
+  /*
+   * specify exact coordinates to click within element, fraction between -1 and 1 is
+   * treated like pecentage, numbers outside that range are treated as whole pixel
+   * offsets.
+   */
+  async function clickWithinElement(options) {
+    const boundingBox = await options.element.boundingBox();
+    const xOffset =
+      Math.abs(options.offset.x) < 1
+        ? (boundingBox.width / 2) * options.offset.x
+        : options.offset.x;
+    const yOffset =
+      Math.abs(options.offset.y) < 1
+        ? (boundingBox.height / 2) * options.offset.y
+        : options.offset.y;
+    await page.mouse.click(
+      boundingBox.x + boundingBox.width / 2 + xOffset,
+      boundingBox.y + boundingBox.height / 2 + yOffset,
+    );
   },
 ];
 
@@ -247,7 +279,7 @@ const testFunction = (name, options) => {
             failedTests++;
             reject(
               new Error(
-                `Actual differs from golden by ${pixelCountDiff} pixels (see ${diffImageName}).`,
+                `Actual differs from expected by ${pixelCountDiff} pixels (see ${diffImageName}).`,
               ),
             );
           }

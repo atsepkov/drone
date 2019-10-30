@@ -168,6 +168,8 @@ tests that don't explicitly define their own.
 To make usage simpler, the rest of this guide describes drone API. The params are described in TypeScript-like format to give
 you an idea of which field take what arguments and which fields are optional.
 
+### Drone
+
     drone.setup(options: {
       defaultTimeout?: number, // default timeout for all tests (defaults to 30,000 ms)
       viewport?: { width: number, height: number }
@@ -190,8 +192,28 @@ call it internally (see above example).
 Terminate tests, close browser instance, show a table of test results, and if all tests are successful, replace golden directory with
 current results.
 
-    page.clickElementWithText(text: string)
+### Page
 
-A convenience function that can be used to click on an exact link instead of trying to find it via selectors. This function will throw
-an error if no elements match the selector or more than one element with this exact text exists. Note that the text must be exact, not
-a substring.
+The `page` argument passed to `actions` function is a Puppeteer page object (see https://devdocs.io/puppeteer/index#class-page for
+usage) with a few convenience methods I added to make testing easier:
+
+    page.elementWithText(text: string)
+
+A convenience function that can be used to find element by text instead of trying to find it via selectors. This function will throw
+an error if no elements contain this exact text or more than one element with this exact text exists. Note that the text must be exact,
+not a substring.
+
+    page.allElementsWithText(text: string)
+
+Same as above, but will return an array of all elements with this text.
+
+    page.clickWithinElement(options: {
+      element: ElementHandle, // element to click on, please make sure to pass a handle, not a selector or text
+      offset: {
+        x: number, // offset from the center (fraction within -1 < x < 1 is treated as percentage, otherwise as pixels)
+        y: number  // offset from the center (fraction within -1 < x < 1 is treated as percentage, otherwise as pixels)
+      }
+    })
+
+Convenience function for clicking exact position within the element (the `x/y` offset is relative to the center of the element). If a
+fraction between -1 and 1 is provided the coordinate is treated as a percentage, otherwise the offset is treated as exact pixel amount.
