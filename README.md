@@ -25,58 +25,59 @@ Let's say we want to test Yahoo's search functionality. Here is a simple test su
 searches for apples, checks the 2nd page of results, and then the images tab. For each of these actions it grabs a screenshot,
 and compares load time against previous run:
 
-    const drone = require('./drone');
+```javascript
+const drone = require('./drone');
 
-    describe('my test example', () => {
+describe('my test example', () => {
+  beforeAll(async () => {
+    await drone.setup({
+      viewport: {
+        width: 1280,
+        height: 800,
+      },
+    });
+  });
 
-      beforeAll(async () => {
-        await drone.setup({
-          viewport: {
-            width: 1280,
-            height: 800
-          }
-        })
-      })
+  drone.test('load yahoo', {
+    waitFor: '#mega-banner-close',
+    actions: async page => {
+      await page.goto('https://yahoo.com');
+    },
+  });
 
-      drone.test('load yahoo', {
-        waitFor:  '#mega-banner-close',
-        actions: async (page) => {
-          await page.goto('https://yahoo.com');
-        },
-      });
+  drone.test('search for apples', {
+    waitFor: '.compPagination',
+    actions: async page => {
+      await page.focus('#uh-search-box');
+      await page.keyboard.type('apples');
+      await page.keyboard.press('Enter');
+    },
+  });
 
-      drone.test('search for apples', {
-        waitFor: '.compPagination',
-        actions: async (page) => {
-          await page.focus('#uh-search-box');
-          await page.keyboard.type('apples');
-          await page.keyboard.press('Enter');
-        },
-      });
+  drone.test('go to next search page', {
+    actions: async page => {
+      let nextPage = await page.waitForSelector('a.next');
+      await Promise.all([
+        nextPage.click(),
+        page.waitForNavigation({waitUntil: 'networkidle0'}),
+      ]);
+    },
+  });
 
-      drone.test('go to next search page', {
-        actions: async (page) => {
-          let nextPage = await page.waitForSelector('a.next');
-          await Promise.all([
-            nextPage.click(),
-            page.waitForNavigation({ waitUntil: 'networkidle0' })
-          ])
-        },
-      });
+  drone.test('go to images tab', {
+    actions: async page => {
+      await Promise.all([
+        page.clickElementWithText('Images'),
+        page.waitForNavigation({waitUntil: 'networkidle0'}),
+      ]);
+    },
+  });
 
-      drone.test('go to images tab', {
-        actions: async (page) => {
-          await Promise.all([
-            page.clickElementWithText('Images'),
-            page.waitForNavigation({ waitUntil: 'networkidle0' })
-          ])
-        },
-      });
-
-      afterAll(async () => {
-        await drone.teardown();
-      })
-    })
+  afterAll(async () => {
+    await drone.teardown();
+  });
+});
+```
 
 Running the above test first time will pass. Running it a 2nd time will fail, however, because Yahoo randomizes advertisements, and
 placement of images and search results slightly. For Yahoo, this randomization is intentional, but for you that may not be the case.
@@ -98,13 +99,15 @@ below listing other stories (Yahoo actually didn't do that, they used cryptic cl
 probably give proper IDs and avoid mangling ID/class names in dev environment given the good developer that you are). Eliminating
 false positives is now as simple as changing the test to:
 
-    drone.test('load yahoo', {
-      waitFor:  '#mega-banner-close',
-      ignore: ['#trending-now', '.thumbnail', '#stories'],
-      actions: async (page) => {
-        await page.goto('https://yahoo.com');
-      },
-    });
+```
+drone.test('load yahoo', {
+  waitFor:  '#mega-banner-close',
+  ignore: ['#trending-now', '.thumbnail', '#stories'],
+  actions: async (page) => {
+    await page.goto('https://yahoo.com');
+  },
+});
+```
 
 Remove golden version of the image and rerun the test, these elements will now be ignored from the diff.
 
