@@ -183,7 +183,8 @@ Used to initialize drone and setup a browser instance.
       waitFor?: string, // selector to wait for before grabbing the screenshot and completing the test
       actions?: (page: puppeteer.Page) => { ... }, // logic to perform during the test
       ignore?: string[],   // list of selectors to ignore (if more than one element satisfies a selector, all will be ignored)
-      timeout?: number // optional timeout to specify, default timeout is 30,000 ms
+      timeout?: number, // optional timeout to specify, default timeout is 30,000 ms
+      duration?: number // maximum duration to allow for the test, defaults to 120% of previous run
     })
 
 Test definition logic, note that you should not use `it` or `test` functions from your framework, the above test will automatically

@@ -15,20 +15,8 @@ let workDir;
 let goldenDir;
 let defaultTimeout = DEFAULT_TIMEOUT; // default timeout for all tests
 let testDir = __dirname; // main test directory
-
-// initialize directories and config
-const workConfig = {
-  tests: {
-    /* expected test times will be placed here */
-  },
-};
-const goldenConfig = readConfig(goldenDir) || {
-  resolutions: [
-    // resolutions that will be tested
-    {width: 1280, height: 800},
-  ],
-  tests: {}, // this empty hash is for failing gracefully if there are no previous entries
-};
+let workConfig;
+let goldenConfig;
 
 if (!global.it) {
   throw new Error(
@@ -45,6 +33,8 @@ const setup = async (options = {}) => {
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
   page = await browser.newPage();
+  pageEnhancements.forEach(f => (page[f.name] = f));
+
   await page.setViewport(
     options.viewport || {
       width: 1280,
@@ -61,7 +51,19 @@ const setup = async (options = {}) => {
   goldenDir = getDir('last_successful');
   cleanDir(workDir);
 
-  pageEnhancements.forEach(f => (page[f.name] = f));
+  // initialize directories and config
+  workConfig = {
+    tests: {
+      /* expected test times will be placed here */
+    },
+  };
+  goldenConfig = readConfig(goldenDir) || {
+    resolutions: [
+      // resolutions that will be tested
+      {width: 1280, height: 800},
+    ],
+    tests: {}, // this empty hash is for failing gracefully if there are no previous entries
+  };
 };
 
 let failedTests = 0;
@@ -209,7 +211,6 @@ const pageEnhancements = [
 // actual test
 const testFunction = (name, options) => {
   const timeout = options.timeout || defaultTimeout;
-  const expectedDuration = 2000;
   const imageName = getImageName(name);
 
   // load time test
@@ -221,6 +222,8 @@ const testFunction = (name, options) => {
           'Browser has not been initialized, perhaps you forgot to run drone.setup()?',
         );
       }
+      let expectedDuration =
+        options.duration || goldenConfig.tests[name] || 2000;
       const goldenImage = path.join(goldenDir, imageName);
       const workImage = path.join(workDir, imageName);
       return new Promise(async (resolve, reject) => {
@@ -292,6 +295,7 @@ const testFunction = (name, options) => {
         } catch (e) {
           if (e.code === 'ENOENT' && e.path === goldenImage) {
             // this is the first time we're running this test, pass
+            // this also has the benefit of bypassing initial duration limit, allowing this test to dictate the duration
             resolve();
           } else {
             failedTests++;
