@@ -143,7 +143,7 @@ class Drone {
     }
 
     // run this to execute a set of actions on the page
-    async actions(logic, options) {
+    async actions(logic) {
         if (!this.browser) {
             throw new Error(
                 'Browser has not been initialized, perhaps you forgot to run drone.start()?',

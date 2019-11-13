@@ -191,9 +191,15 @@ Used to initialize drone and setup a browser instance.
 Terminate tests, close browser instance, show a table of test results, and if all tests are successful, replace golden directory with
 current results.
 
+    drone.actions(logic: async (page: puppeteer.Page) => { ... })
+
+Run a set of actions on the page. Note that both `Drone.actions()` and `TestDrone.test()` leave the page/drone in its final state, 
+they do no cleanup to reset the state back to what it was prior to running this logic. This means you can stack logic through
+multiple calls to these methods but also that your starting state depends on the final state of the logic ran beforehand.
+
 ### TestDrone
 
-    drone.test(testName: string, {
+    drone.test(testName: string, options: {
       waitFor?: string, // selector to wait for before grabbing the screenshot and completing the test
       actions?: (page: puppeteer.Page) => { ... }, // logic to perform during the test
       ignore?: string[],   // list of selectors to ignore (if more than one element satisfies a selector, all will be ignored)
