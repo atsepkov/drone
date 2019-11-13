@@ -1,4 +1,5 @@
-const drone = require('../drone');
+const Drone = require('../drone').TestDrone;
+const drone = new Drone();
 
 if (!global.beforeAll) {
   // for mocha
@@ -8,7 +9,7 @@ if (!global.beforeAll) {
 
 describe('my test example', () => {
   beforeAll(async () => {
-    await drone.setup({
+    await drone.start({
       viewport: {
         width: 1280,
         height: 800,
@@ -53,6 +54,6 @@ describe('my test example', () => {
   });
 
   afterAll(async () => {
-    await drone.teardown();
+    await drone.stop();
   });
 });

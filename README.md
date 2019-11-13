@@ -16,13 +16,19 @@ This tool helps me find these breakages quickly in a semi-automated way. Here is
 - any increase in load time greater than 20% results in a failed overall run
 - you can forgive individual failures using config, forcing a new successful run
 
+In addition to UI testing, Drone can also be used for webscraping. See usage section.
+
 ## Installation
 
     npm install test-drone
 
 ## Usage
 
-The test module is meant to be used within a test framework (Jest, Jasmine, and Mocha were tested, but most should work). Note
+There are 2 classes within this module:
+- `Drone` is a base class that can be spawned through Node directly and can be used for web-scraping.
+- `TestDrone` is a testing class extending it that performs screenshot-based testing.
+
+The TestDrone class is meant to be used within a test framework (Jest, Jasmine, and Mocha were tested, but most should work). Note
 that your test syntax may differ slightly (for example, in Mocha, you would use `before` and `after` instead of `beforeAll` and `afterAll`).
 
 Let's say we want to test Yahoo's search functionality. Here is a simple test suite (4 tests) that navigates to the main page,
@@ -30,11 +36,12 @@ searches for apples, checks the 2nd page of results, and then the images tab. Fo
 and compares load time against previous run:
 
 ```javascript
-const drone = require('test-drone');
+const Drone = require('test-drone').TestDrone;
+const drone = new Drone();
 
 describe('my test example', () => {
   beforeAll(async () => {
-    await drone.setup({
+    await drone.start({
       viewport: {
         width: 1280,
         height: 800,
@@ -79,7 +86,7 @@ describe('my test example', () => {
   });
 
   afterAll(async () => {
-    await drone.teardown();
+    await drone.stop();
   });
 });
 ```
@@ -171,13 +178,20 @@ you an idea of which field take what arguments and which fields are optional.
 
 ### Drone
 
-    drone.setup(options: {
+    drone.start(options: {
       testDirectory?: string, // absolute path to directory where test data will be placed (defaults to node_modules/test-drone)
       defaultTimeout?: number, // default timeout for all tests (defaults to 30,000 ms)
       viewport?: { width: number, height: number }
     })
 
 Used to initialize drone and setup a browser instance.
+
+    drone.stop()
+
+Terminate tests, close browser instance, show a table of test results, and if all tests are successful, replace golden directory with
+current results.
+
+### TestDrone
 
     drone.test(testName: string, {
       waitFor?: string, // selector to wait for before grabbing the screenshot and completing the test
@@ -189,11 +203,6 @@ Used to initialize drone and setup a browser instance.
 
 Test definition logic, note that you should not use `it` or `test` functions from your framework, the above test will automatically
 call it internally (see above example).
-
-    drone.teardown()
-
-Terminate tests, close browser instance, show a table of test results, and if all tests are successful, replace golden directory with
-current results.
 
 ### Page
 
@@ -220,3 +229,15 @@ Same as above, but will return an array of all elements with this text.
 
 Convenience function for clicking exact position within the element (the `x/y` offset is relative to the center of the element). If a
 fraction between -1 and 1 is provided the coordinate is treated as a percentage, otherwise the offset is treated as exact pixel amount.
+
+    page.waitForElementWithText(text: string)
+
+Returns a promise that resolves when at least one element with given text appears on the page.
+
+    page.wait(ms: number)
+
+Returns a promise that resolves after `ms` milliseconds.
+
+    page.scrape(element: ElementHandle, format: 'json' | 'text')
+
+Returns a promise that resolves to element content, either as text or json hash.

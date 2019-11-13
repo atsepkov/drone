@@ -1,7 +1,7 @@
 {
   "name": "test-drone",
-  "version": "0.0.9",
-  "description": "Test framework for the lazy",
+  "version": "0.0.10",
+  "description": "Test and web-scraping framework for the lazy",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Run either of the 3 test scripts in this section to see how to launch drone: npm run [jest/mocha/jasmine]\"",
@@ -14,6 +14,7 @@
   "dependencies": {
     "console.table": "^0.10.0",
     "expect.js": "^0.3.1",
+    "html-table-to-json": "^0.4.1",
     "pixelmatch": "^5.1.0",
     "pngjs": "^3.4.0",
     "puppeteer": "^2.0.0"
