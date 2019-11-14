@@ -28,6 +28,8 @@ There are 2 classes within this module:
 - `Drone` is a base class that can be spawned through Node directly and can be used for web-scraping.
 - `TestDrone` is a testing class extending it that performs screenshot-based testing.
 
+You can see example usage for each one by looking at `example.js` and `example.test.js` files.
+
 The TestDrone class is meant to be used within a test framework (Jest, Jasmine, and Mocha were tested, but most should work). Note
 that your test syntax may differ slightly (for example, in Mocha, you would use `before` and `after` instead of `beforeAll` and `afterAll`).
 
@@ -191,11 +193,15 @@ Used to initialize drone and setup a browser instance.
 Terminate tests, close browser instance, show a table of test results, and if all tests are successful, replace golden directory with
 current results.
 
-    drone.actions(logic: async (page: puppeteer.Page) => { ... })
+    drone.actions(logic: async (page: puppeteer.Page) => { ... }, options: {
+        cache?: string // variable to cache the result under, if omitted no caching will be done
+        })
 
 Run a set of actions on the page. Note that both `Drone.actions()` and `TestDrone.test()` leave the page/drone in its final state, 
 they do no cleanup to reset the state back to what it was prior to running this logic. This means you can stack logic through
-multiple calls to these methods but also that your starting state depends on the final state of the logic ran beforehand.
+multiple calls to these methods but also that your starting state depends on the final state of the logic ran beforehand. Be aware
+of this when caching partial operations, cached operations will skip navigation and page manipulation. However, do use caching
+whenever possible to avoid bombarding other sites with drones. Fly responsibly!
 
 ### TestDrone
 

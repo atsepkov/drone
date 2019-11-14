@@ -1,10 +1,12 @@
 {
   "name": "test-drone",
-  "version": "0.0.11",
+  "version": "0.0.13",
   "description": "Test and web-scraping framework for the lazy",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Run either of the 3 test scripts in this section to see how to launch drone: npm run [jest/mocha/jasmine]\"",
+    "start": "echo \"Use one of the following commands to see drone in action:\n\tnpm run example\t\tsee how drone web-scrapes a table from a webpage (code in example.js)\n\tnpm run test\t\tsee more info on testing with drone (code in example.test.js)\"",
+    "example": "node example.js",
+    "test": "echo \"Run either of the 3 test scripts in this section to see how to launch drone for testing: npm run [jest/mocha/jasmine]\"",
     "jest": "jest",
     "mocha": "mocha example.test.js",
     "jasmine": "jasmine --random=false example.test.js"
@@ -14,6 +16,7 @@
   "dependencies": {
     "console.table": "^0.10.0",
     "expect.js": "^0.3.1",
+    "flow-bin": "^0.112.0",
     "html-table-to-json": "^0.4.1",
     "pixelmatch": "^5.1.0",
     "pngjs": "^3.4.0",

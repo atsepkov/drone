@@ -25,11 +25,9 @@ class Drone {
         this.page = await this.browser.newPage();
         this.defaultTimeout = options.defaultTimeout ? options.defaultTimeout : this.defaultTimeout;
         this.baseDir = options.baseDirectory ? options.baseDirectory : this.baseDir;
+        this.config = this.readConfig(this.baseDir);
         await this.page.setViewport(
-            options.viewport || {
-                width: 1280,
-                height: 800,
-            }
+            options.viewport || this.config.resolutions[0]
         );
 
         // page convenience methods
@@ -102,9 +100,11 @@ class Drone {
         this.page.scrape = async(element, format) => {
             let content = null;
             if (format === 'json') {
-                return new HtmlTableToJson(element.outerHTML);
+                content = await this.page.evaluate(element => element.outerHTML, element);
+                return new HtmlTableToJson(content).results;
             } else {
-                return element.textContent;
+                content = await this.page.evaluate(element => element.textContent, element)
+                return content;
             }
         }
     }
@@ -117,6 +117,7 @@ class Drone {
             );
         }
         await this.browser.close();
+        this.writeConfig(this.baseDir, this.config);
     };
 
     // returns absolute path to directory for the build, if directory doesn't exist, it will be created
@@ -142,15 +143,56 @@ class Drone {
         });
     }
 
+    // logic for reading build config
+    readConfig(dirpath) {
+        try {
+            return JSON.parse(fs.readFileSync(path.join(dirpath, 'config.json')));
+        } catch (e) {
+            return {
+                resolutions: [
+                    // resolutions that will be tested
+                    {width: 1280, height: 800},
+                ],
+                cache: {}, // any variables we have cached
+                tests: {}, // this empty hash is for failing gracefully if there are no previous entries
+            }
+        }
+    }
+
+    // logic for writing build config
+    writeConfig(dirpath, data) {
+        fs.writeFileSync(
+            path.join(dirpath, 'config.json'),
+            JSON.stringify(data, null, 2),
+        );
+    }
+
     // run this to execute a set of actions on the page
-    async actions(logic) {
+    async actions(logic, options = {}) {
         if (!this.browser) {
             throw new Error(
                 'Browser has not been initialized, perhaps you forgot to run drone.start()?',
             );
         }
 
-        await logic(this.page);
+        // caching of actions result to improve drone performance and minimize harm to the webs
+        if (options.cache) {
+            if (typeof options.cache !== "string") { // in case someone tries to use it as a boolean
+                throw new Error('cache parameter must be a string (a key to cache the data under).');
+            }
+
+            return new Promise(async (resolve, reject) => {
+                try {
+                    if (!(options.cache in this.config.cache)) {
+                        this.config.cache[options.cache] = await logic(this.page);
+                    }
+                    resolve(this.config.cache[options.cache]);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        }
+        return logic(this.page);
     }
 }
 
@@ -184,23 +226,6 @@ class TestDrone extends Drone {
         return name.replace(/\s/g, '_') + '.png';
     };
 
-    // logic for reading build config
-    readConfig(dirpath) {
-        try {
-            return JSON.parse(fs.readFileSync(path.join(dirpath, 'config.json')));
-        } catch (e) {
-            return undefined;
-        }
-    }
-
-    // logic for writing build config
-    writeConfig(dirpath, data) {
-        fs.writeFileSync(
-            path.join(dirpath, 'config.json'),
-            JSON.stringify(data, null, 2),
-        );
-    }
-
     async start(options = {}) {
         await super.start(options)
 
@@ -215,13 +240,8 @@ class TestDrone extends Drone {
                 /* expected test times will be placed here */
             },
         };
-        this.goldenConfig = this.readConfig(this.goldenDir) || {
-            resolutions: [
-                // resolutions that will be tested
-                {width: 1280, height: 800},
-            ],
-            tests: {}, // this empty hash is for failing gracefully if there are no previous entries
-        };
+        this.goldenConfig = this.readConfig(this.goldenDir);
+        this.config = this.goldenConfig; // override original config location (for Drone.actions)
     }
 
     // actual test
@@ -366,8 +386,10 @@ class TestDrone extends Drone {
                     },
                 );
             });
-            this.currentConfig.resolutions = this.goldenDir.resolutions;
-            writeConfig(this.goldenDir, this.currentConfig);
+            writeConfig(this.goldenDir, {
+                ...this.goldenConfig,
+                ...this.currentConfig
+            });
         } else {
             console.log(`${this.failedTests} tests failed.`);
         }
