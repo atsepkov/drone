@@ -8,8 +8,8 @@ const drone = new Drone();
         await page.goto('https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population');
         let table = await page.waitForSelector('table.wikitable:nth-child(18)');
         return page.scrape(table, 'json')
-    }, {
-        cache: 'cities by population'
+    // }, {
+    //     cache: 'cities by population'
     })
 
     console.log(cities);
