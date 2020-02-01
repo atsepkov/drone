@@ -36,7 +36,7 @@ The difference between declarative and imperative approaches is the coding style
 - **Imperative**: do action `A`, then do action `B`, then do action `C` (which should load page `S`), then do action `D`.
 - **Declarative**: make sure page `S` is loaded, then do `D`.
 
-You can find more information in [Imperative](imperative-approach) and [Declarative](declarative-approach) sections that
+You can find more information in [Imperative](#imperative-approach) and [Declarative](#declarative-approach) sections that
 follow. Declarative approach is recommended, as it's a lot more durable (in case of 404 pages, or page errors) 
 and even allows retries. But declarative is not often as intuitive and requires a bit more preparation on your end.
 I also recommend declarative approach for testing, since it allows you to make your tests independent more easily and also allows
@@ -292,7 +292,7 @@ declarative approach will be able to recover from it, the imperative approach wi
 
 The other powerful feature of declarative mode is `TestDrone.testAllStates`, which will automatically navigate to
 every declared state in random order and test that this state works as expected, taking photos if there are issues. See
-[TestDrone.testAllStates](testdrone-testallstates) for more info.
+[TestDrone.testAllStates](#testdrone-testallstates) for more info.
 
 ## Complete API
 
