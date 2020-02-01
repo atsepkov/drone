@@ -246,6 +246,220 @@ class Drone {
     }
     return logic(this.page);
   }
+    
+  // state-machine logic
+
+  // define a state name and test criteria that must be true to determine whether
+  // we're already in this state.
+  addState(stateName, testCriteriaCallback) {
+    if (stateName === BAD_STATE || stateName in this.states) {
+      throw new Error(`State "${stateName}" already exists, please use unique state names.`);
+    }
+
+    this.stateOrder.push(stateName);
+    this.states[stateName] = testCriteriaCallback;
+  }
+
+  // define transition from startState to endState, optionally define cost (default = 1)
+  // the algorithm will prefer transitions with cheaper cost
+  addStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
+
+    if (!this.states[startState]) {
+      throw new Error(`Start state "${startState}" does not exist.`);
+    } else if (!this.states[endState]) {
+      throw new Error(`End state "${endState}" does not exist.`);
+    } else if (startState === endState) {
+      throw new Error(`Trying to add transition from state to itself (${startState}).`);
+    } else if (
+      this.transitions[`${startState} >> ${endState}`] &&
+      this.transitions[`${startState} >> ${endState}`].cost <= cost
+    ) {
+      throw new Error(`A cheaper path (cost = ${this.transitions[`${startState} >> ${endState}`].cost}) from "${startState}" to "${endState}" already exists.`);
+    }
+
+    this.transitions[`${startState} >> ${endState}`] = {
+      cost: cost,
+      logic: transitionLogicCallback
+    };
+    if (this.neighbors[startState]) {
+      this.neighbors[startState].push(endState);
+    } else {
+      this.neighbors[startState] = [endState];
+    }
+  }
+
+  // define transition that is guaranteed to get us to this endState regardless of where
+  // we currently are (i.e. unknown state)
+  addDefaultStateTransition(endState, transitionLogicCallback, cost = 1) {
+
+    if (!this.states[endState]) {
+      throw new Error(`End state "${endState}" does not exist.`);
+    }
+
+    this.transitions[`${BAD_STATE} >> ${endState}`] = {
+      cost: cost,
+      logic: transitionLogicCallback
+    };
+    if (this.neighbors[BAD_STATE]) {
+      this.neighbors[BAD_STATE].push(endState);
+    } else {
+      this.neighbors[BAD_STATE] = [endState];
+    }
+  }
+
+  // figures out current state and returns its name to the user, returns null if no states match
+  async whereAmI() {
+    // if cached state is correct, return that
+    if (this.currentState && await this.states[this.currentState](this.page, this.params)) {
+      return this.currentState;
+    }
+
+    // otherwise loop through all states to find the correct one
+    for (const stateName of this.stateOrder) {
+      if (await this.states[stateName](this.page, this.params)) {
+        return stateName;
+      }
+    }
+    return null;
+  }
+
+  // computes shortest path to desired state using Dijstra's algorithm.
+  async findPathToState(stateName) {
+    if (!this.stateOrder.includes(stateName)) {
+      throw new Error(`Unknown state: "${stateName}", you must add this state to Drone first.`)
+    }
+    let startState = await this.whereAmI() || BAD_STATE;
+    if (!this.neighbors[startState]) {
+      startState = BAD_STATE; // legit state, but no path exists out of it
+    }
+    if (startState === stateName) {
+      return []; // already there
+    }
+
+    const unvisited = [...this.stateOrder];
+    const vertices = {};
+
+    this.stateOrder.forEach((state) => {
+      let distance, prev = null;
+      if (startState === state) {
+        distance = 0;
+      } else {
+        distance = Infinity;
+        prev = null;
+      }
+      vertices[state] = { distance, prev };
+    });
+    // if (startState === BAD_STATE) {
+      unvisited.push(BAD_STATE);
+      vertices[BAD_STATE] = { distance: 0, prev: null };
+    // }
+
+    while (unvisited.length) {
+      // find node with shortest distance
+      let node = null;
+      let minDistance = Infinity;
+      unvisited.forEach((state) => {
+        if (vertices[state].distance < minDistance) {
+          minDistance = vertices[state].distance;
+          node = state;
+        }
+      });
+      unvisited.splice(unvisited.indexOf(node), 1);
+
+      let where = await this.whereAmI();
+      (this.neighbors[node] || []).forEach(neighbor => {
+        let distance = minDistance + this.transitions[`${node} >> ${neighbor}`].cost;
+        clog(where, startState, node, neighbor, vertices)
+        if (distance < vertices[neighbor].distance) {
+          vertices[neighbor] = { distance, prev: node }
+        }
+      });
+    }
+
+    let current = stateName;
+    let prev = vertices[stateName].prev;
+    const path = [`${prev} >> ${current}`];
+    const visitedStates = [current];
+    if (prev === null) {
+      throw Error(`No route exists from "${startState}" (current) to "${stateName}" and no default route exists.`);
+    }
+    while (prev !== startState && prev !== BAD_STATE) {
+      current = vertices[current].prev;
+      prev = vertices[prev].prev;
+      path.unshift(`${prev} >> ${current}`);
+      visitedStates.push(current);
+    }
+    return path;
+  }
+
+  // traverses a given path
+  async traversePath(path, retries) {
+
+    // perform navigation, return true if succeeded, false if failed
+    const attempt = async (route, desiredState) => {
+      await this.transitions[route].logic(this.page, params);
+      let newState = await this.whereAmI();
+      if (newState !== desiredState) {
+        if (newState === this.currentState) {
+          console.error(`Route "${route}" did not result in any state transition.`);
+        } else {
+          console.error(`Route "${route}" resulted in transition to wrong state (${newState}).`);
+          this.currentState = newState; // document transition to wrong state
+        }
+        return false;
+      }
+      return true;
+    } 
+
+    // now traverse the path
+    for (const route of path) {
+      let retryAttempts = 0;
+      let success = false;
+      let desiredState = visitedStates.pop();
+      while (!success && retryAttempts < retries) {
+        success = await attempt(route, desiredState);
+        retryAttempts++;
+      }
+      if (!success) {
+        throw new Error(`Failed to ensure "${stateName}" state, could not transition to state "${desiredState}" using route "${route}" after ${retries} attempts.`)
+      }
+      this.currentState = desiredState; // document transition to correct state
+    }
+  }
+
+  // navigates to correct state if we're not already in that state, if navigation
+  // is impossible, throws an error.
+  async ensureState(stateName, params, actions, retries = 3) {
+    const path = await this.findPathToState(stateName, params);
+    await this.traversePath(path, retries);
+    return await actions(this.page, this.params);
+  }
+
+  // similar to above, but is satisfied by more than one state, note that it prefers the state with the shortest path
+  async ensureEitherState(stateList, params, actions, retries = 3) {
+    let cheapestCost = Infinity, cheapestPath = null, cheapestState;
+    for (const state of stateList) {
+      try {
+        const path = await this.findPathToState(state, params);
+        const cost = path.reduce((cost, transition) => cost + this.transitions[transition].cost, 0);
+        if (cost < cheapestCost) {
+          cheapestCost = cost;
+          cheapestPath = path;
+          cheapestState = state;
+        }
+      } catch (err) {
+        if (!/No route exists/.test(err)) {
+          throw err;
+        }
+      }
+    }
+
+    if (!cheapestPath) {
+      throw new Error(`No route exists from "${this.whereAmI()}" (current state) to either of requested states: ${stateList.join(', ')}`);
+    }
+    await this.traversePath(cheapestPath, retries);
+    return await actions(this.page, this.params, cheapestState);
+  }
 }
 
 /*
