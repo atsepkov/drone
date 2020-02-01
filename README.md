@@ -214,7 +214,7 @@ DB queries, and they ALL take over 30 seconds to run, you can set `defaultTimeou
 tests that don't explicitly define their own.
 
 #### Declarative Approach
-The alternative approach involves defining states (i.e. web pages) and ransitions between them. Drone then builds an 
+The alternative approach involves defining states (i.e. web pages) and transitions between them. Drone then builds an 
 internal state machine and learns how to navigate the website. Instead of giving it step-by-step instructions you can then 
 simply ask the drone to make sure it's in proper state before running your instructions. Drone figures out shortest path to 
 desired state from current using Dijkstra's algorithm. This is very similar to how your GPS system works, it's a GPS system 
@@ -401,9 +401,10 @@ a successful transition. Same as with `drone.findPathToState`, you usually won't
 
     drone.ensureState(stateName: string, params: {}, actions: async (page: puppeteer.Page) => { ... }, retries: number)
 
-Tells drone to find its way to requested state, no matter where drone is now, and execute a set of actions afterwards. Each
-transition will be attempted the number of times specified by `retry` in the event of failure. The format of actions function is
-the same as that of `drone.actions` method. `params` is your persistent set of arguments you decide to pass in, which can be used
+Tells drone to find its way to requested state, no matter where drone is now, and execute a set of actions afterwards. Drone will
+use Dijsktra's algorithm to find the shorest path to requested state from its current position. Each transition will be 
+attempted the number of times specified by `retry` in the event of failure. The format of actions function is the same as 
+that of `drone.actions` method. `params` is your persistent set of arguments you decide to pass in, which can be used
 for testing states, or performing state transitions (i.e. you can store login credentials, current search query, etc.).
 
 #### ensureEitherState (declarative mode)
