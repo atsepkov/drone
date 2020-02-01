@@ -271,11 +271,13 @@ describe('my test example', () => {
   }});
 
   drone.test('go to images tab', { async page => {
-    let imagesTabLink = await page.elementWithText('Images');
-    await Promise.all([
-      imagesTabLink.click(),
-      page.waitForNavigation({waitUntil: 'networkidle0'}),
-    ]);
+    drone.ensureState('search results', { searchTerm: apples }, async page => {
+      let imagesTabLink = await page.elementWithText('Images');
+      await Promise.all([
+        imagesTabLink.click(),
+        page.waitForNavigation({waitUntil: 'networkidle0'}),
+      ]);
+    });
   }});
 
   afterAll(async () => {
@@ -286,13 +288,17 @@ describe('my test example', () => {
 
 The benefits of this approach may not be apparent at first. Unlike the imperative approach, this approach is
 less fragile and easier to use for more complex tests/crawlers. It deals with failures better by ensuring
-that your operations start in the correct state. In case of failures it will retry the navigation until it's 
-obvious that the transition is broken. If the website has a hickup, fails to load or serves a 404 page, the 
-declarative approach will be able to recover from it, the imperative approach will not.
+that your operations start in the correct state. It also better isolates your test cases, if one test fails
+that doesn't mean all consecutive tests will fail, you can even skip tests without affecting those that follow.
+It makes your UI tests behave like unit tests.
+
+In case of failures it will retry the navigation until it's obvious that the transition is broken. If the website 
+has a hickup, fails to load or serves a 404 page, the declarative approach will be able to recover from it, the 
+imperative approach will not.
 
 The other powerful feature of declarative mode is `TestDrone.testAllStates`, which will automatically navigate to
 every declared state in random order and test that this state works as expected, taking photos if there are issues. See
-[TestDrone.testAllStates](#testdrone-testallstates) for more info.
+[TestDrone.testAllStates](#testdronetestallstates-declarative-mode) for more info.
 
 ## Complete API
 
