@@ -185,3 +185,8 @@ exports.tableToJson = async (page, table, options) => {
     opts,
   );
 };
+
+// converts composite state to string
+exports.stateToString = (state) => {
+    return JSON.stringify(state, Object.keys(state).sort());
+};

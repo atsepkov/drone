@@ -7,7 +7,7 @@ const path = require('path');
 const expect = require('expect.js');
 const util = require('./util');
 
-const BAD_STATE = '<< INVALID STATE >>';
+const BAD_STATE = '< INVALID STATE >';
 
 /*
  * Base class for puppeteer-powered browsing automation library.
@@ -21,11 +21,63 @@ class Drone {
     this.baseDir = __dirname;
 
     // state machine properties
-    this.states = {}; // possible states the system is aware of
-    this.stateOrder = []; // states defined earlier on have higher test priority
-    this.transitions = {}; // state transitions the system is aware of
-    this.neighbors = {}; // used by Dijsktra's algorithm to figure out how to traverse states
-    this.currentState = null; // used to 'cache' current state to speed up some operations
+    this.stateTests = {};       // possible base states the system is aware of;
+    this.states = [];           // states defined earlier on have higher test priority;
+    this.transitions = {};      // base state transitions the system is aware of;
+    this.neighbors = {};        // used by Dijsktra's algorithm to figure out how to traverse states
+    this.currentState = null;   // used to 'cache' current state to speed up some operations
+
+    // composite states;
+    this.layers = {};               // layers of composite states, each layer contains a set of states
+    this.compositeStates = [];      // expanded composite states
+    this.compositeTransitions = {}; // expanded composite state transitions
+  }
+
+  get baseStates() {
+    return this.states.slice();
+  }
+
+  get statesInLayer() {
+    const layers = Object.keys(this.layers);
+    const statesByLayer = {};
+    layers.forEach(layer => {
+      statesByLayer[layer] = Object.keys(this.layers[layer]);
+    });
+    return statesByLayer;
+  }
+
+  get allStates() {
+    this.computeCompositeStates();
+    return this.compositeStates.slice();
+  }
+
+  // expands base states into composite states using layers
+  computeCompositeStates() {
+    let states = this.states.map(state => {
+      return { base: state }
+    });
+    for (const [layer, layerStates] of Object.entries(this.layers)) {
+      let newStates = [];
+      for (const state of states) {
+        let baseState = state.base;
+        let stateUsed = false;
+        for (const stateLayer of Object.keys(layerStates)) {
+          if (layerStates[stateLayer].baseStateList.includes(baseState)) {
+            stateUsed = true;
+            newStates.push({
+              ...state,
+              [layer]: stateLayer
+            })
+          }
+        }
+        if (!stateUsed) {
+          throw new Error(`No composite state of type "${layer}" exists for base state "${baseState}".`)
+        }
+      }
+      states = newStates;
+    }
+    this.compositeStates = states;
+    // TODO: compute composite transitions
   }
 
   // call this to setup and start the drone
@@ -148,7 +200,6 @@ class Drone {
       let textSelected = options.text
         ? await this.page.allElementsWithText(options.text)
         : null;
-      // clog('clog', cssSelected, xpathSelected, textSelected, options)
       return convenienceWrap(
         await util.intersection(
           await util.intersection(cssSelected, xpathSelected),
@@ -252,21 +303,71 @@ class Drone {
   // define a state name and test criteria that must be true to determine whether
   // we're already in this state.
   addState(stateName, testCriteriaCallback) {
-    if (stateName === BAD_STATE || stateName in this.states) {
+    if (stateName === BAD_STATE || stateName in this.stateTests) {
       throw new Error(`State "${stateName}" already exists, please use unique state names.`);
     }
 
-    this.stateOrder.push(stateName);
-    this.states[stateName] = testCriteriaCallback;
+    this.states.push(stateName);
+    this.stateTests[stateName] = testCriteriaCallback;
+  }
+
+  // define a composite state (a modifier for base state, i.e. logged in)
+  addCompositeState(stateName, baseStateList, testCriteriaCallback) {
+    const layers = Object.keys(stateName);
+    if (layers.length !== 1) {
+      throw new Error(`Invalid format for composite state: ${JSON.stringify(stateName)}. Can only define one composite layer at a time.`)
+    } else if (this.layers[layers[0]] && stateName[layers[0]] in this.layers[layers[0]]) {
+      throw new Error(`Composite state "${JSON.stringify(stateName)}" already exists, please use unique state names.`);
+    }
+
+    if (!this.layers[layers[0]]) {
+      this.layers[layers[0]] = {};
+    }
+    this.layers[layers[0]][stateName[layers[0]]] = {
+      baseStateList,
+      testCriteriaCallback,
+    };
+  }
+
+  // define default composite state (composite state that applies itself to all base states that do not yet have a composite state at this layer)
+  addDefaultCompositeState(stateName, testCriteriaCallback) {
+    const layers = Object.keys(stateName);
+    if (layers.length !== 1) {
+      throw new Error(`Invalid format for composite state: ${JSON.stringify(stateName)}. Can only define one composite layer at a time.`)
+    } else if (this.layers[layers[0]] && stateName[layers[0]] in this.layers[layers[0]]) {
+      throw new Error(`Composite state "${JSON.stringify(stateName)}" already exists, please use unique state names.`);
+    }
+
+    // const baseStateList = Object.keys(this.layers[layers[0]]).reduce((list, state) => {
+    //   return [...new Set([...list, ...state.baseStateList])]
+    // }, []);
+
+    // TODO: move this to separate function and use as test to throw error if layer has not been finished
+    const baseStateList = this.states.filter(state => {
+      for (let compositeState of Object.values(this.layers[layers[0]])) {
+        if (compositeState.baseStateList.includes(state)) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    if (!this.layers[layers[0]]) {
+      this.layers[layers[0]] = {};
+    }
+    this.layers[layers[0]][stateName[layers[0]]] = {
+      baseStateList,
+      testCriteriaCallback,
+    };
   }
 
   // define transition from startState to endState, optionally define cost (default = 1)
   // the algorithm will prefer transitions with cheaper cost
   addStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
 
-    if (!this.states[startState]) {
+    if (!this.stateTests[startState]) {
       throw new Error(`Start state "${startState}" does not exist.`);
-    } else if (!this.states[endState]) {
+    } else if (!this.stateTests[endState]) {
       throw new Error(`End state "${endState}" does not exist.`);
     } else if (startState === endState) {
       throw new Error(`Trying to add transition from state to itself (${startState}).`);
@@ -292,7 +393,7 @@ class Drone {
   // we currently are (i.e. unknown state)
   addDefaultStateTransition(endState, transitionLogicCallback, cost = 1) {
 
-    if (!this.states[endState]) {
+    if (!this.stateTests[endState]) {
       throw new Error(`End state "${endState}" does not exist.`);
     }
 
@@ -310,13 +411,13 @@ class Drone {
   // figures out current state and returns its name to the user, returns null if no states match
   async whereAmI() {
     // if cached state is correct, return that
-    if (this.currentState && await this.states[this.currentState](this.page, this.params)) {
+    if (this.currentState && await this.stateTests[this.currentState](this.page, this.params)) {
       return this.currentState;
     }
 
     // otherwise loop through all states to find the correct one
-    for (const stateName of this.stateOrder) {
-      if (await this.states[stateName](this.page, this.params)) {
+    for (const stateName of this.states) {
+      if (await this.stateTests[stateName](this.page, this.params)) {
         return stateName;
       }
     }
@@ -325,7 +426,7 @@ class Drone {
 
   // computes shortest path to desired state using Dijstra's algorithm.
   async findPathToState(stateName) {
-    if (!this.stateOrder.includes(stateName)) {
+    if (!this.states.includes(stateName)) {
       throw new Error(`Unknown state: "${stateName}", you must add this state to Drone first.`)
     }
     let startState = await this.whereAmI() || BAD_STATE;
@@ -336,10 +437,10 @@ class Drone {
       return []; // already there
     }
 
-    const unvisited = [...this.stateOrder];
+    const unvisited = [...this.states];
     const vertices = {};
 
-    this.stateOrder.forEach((state) => {
+    this.states.forEach((state) => {
       let distance, prev = null;
       if (startState === state) {
         distance = 0;
@@ -369,7 +470,6 @@ class Drone {
       let where = await this.whereAmI();
       (this.neighbors[node] || []).forEach(neighbor => {
         let distance = minDistance + this.transitions[`${node} >> ${neighbor}`].cost;
-        clog(where, startState, node, neighbor, vertices)
         if (distance < vertices[neighbor].distance) {
           vertices[neighbor] = { distance, prev: node }
         }
@@ -379,7 +479,6 @@ class Drone {
     let current = stateName;
     let prev = vertices[stateName].prev;
     const path = [`${prev} >> ${current}`];
-    const visitedStates = [current];
     if (prev === null) {
       throw Error(`No route exists from "${startState}" (current) to "${stateName}" and no default route exists.`);
     }
@@ -387,7 +486,6 @@ class Drone {
       current = vertices[current].prev;
       prev = vertices[prev].prev;
       path.unshift(`${prev} >> ${current}`);
-      visitedStates.push(current);
     }
     return path;
   }
@@ -397,7 +495,7 @@ class Drone {
 
     // perform navigation, return true if succeeded, false if failed
     const attempt = async (route, desiredState) => {
-      await this.transitions[route].logic(this.page, params);
+      await this.transitions[route].logic(this.page, this.params);
       let newState = await this.whereAmI();
       if (newState !== desiredState) {
         if (newState === this.currentState) {
@@ -415,7 +513,7 @@ class Drone {
     for (const route of path) {
       let retryAttempts = 0;
       let success = false;
-      let desiredState = visitedStates.pop();
+      let desiredState = route.split(' >> ')[1];
       while (!success && retryAttempts < retries) {
         success = await attempt(route, desiredState);
         retryAttempts++;
@@ -432,7 +530,9 @@ class Drone {
   async ensureState(stateName, params, actions, retries = 3) {
     const path = await this.findPathToState(stateName, params);
     await this.traversePath(path, retries);
-    return await actions(this.page, this.params);
+    if (typeof actions === 'function') {
+      return await actions(this.page, this.params);
+    }
   }
 
   // similar to above, but is satisfied by more than one state, note that it prefers the state with the shortest path
@@ -458,7 +558,52 @@ class Drone {
       throw new Error(`No route exists from "${this.whereAmI()}" (current state) to either of requested states: ${stateList.join(', ')}`);
     }
     await this.traversePath(cheapestPath, retries);
-    return await actions(this.page, this.params, cheapestState);
+    if (typeof actions === 'function') {
+      return await actions(this.page, this.params, cheapestState);
+    }
+  }
+
+  // returns a shuffled copy of the list
+  shuffle(list) {
+    list = list.slice(); // make a copy
+    for (let i1 = list.length - 1; i1 > 0; i1--) {
+      const i2 = math.floor(Math.random() * (i1 + 1));
+      const temp = list[i1];
+      list[i1] = list[i2];
+      list[i2] = temp;
+    }
+    return list;
+  }
+
+  // compares two images on disk
+  diffImage(workImage, goldenImagem, diffImage) {
+    try {
+      const img1 = PNG.sync.read(fs.readFileSync(goldenImage));
+      const img2 = PNG.sync.read(fs.readFileSync(workImage));
+      const {width, height} = img1;
+      const diff = new PNG({width, height});
+      const pixelCountDiff = pixelmatch(
+        img1.data,
+        img2.data,
+        diff.data,
+        width,
+        height,
+        {threshold: 0.1},
+      );
+      fs.writeFileSync(
+        diffImage,
+        PNG.sync.write(diff),
+      );
+
+      return pixelCountDiff;
+    } catch (e) {
+      if (e.code === 'ENOENT' && e.path === goldenImage) {
+        // this is the first time we're running this test, return null
+        return null;
+      } else {
+        throw e;
+      }
+    }
   }
 }
 
@@ -520,12 +665,9 @@ class TestDrone extends Drone {
       name,
       async () => {
         if (!this.page) {
-          throw new Error(
-            'Browser has not been initialized, perhaps you forgot to run drone.start()?',
-          );
+          throw new Error('Browser has not been initialized, perhaps you forgot to run drone.start()?');
         }
-        let expectedDuration =
-          options.duration || this.goldenConfig.tests[name] || 2000;
+        let expectedDuration = options.duration || this.goldenConfig.tests[name] || 2000;
         const goldenImage = path.join(this.goldenDir, imageName);
         const workImage = path.join(this.currentDir, imageName);
         return new Promise(async (resolve, reject) => {
@@ -553,57 +695,38 @@ class TestDrone extends Drone {
           }
 
           await this.page.screenshot({path: workImage});
+          const diffImage = path.join(this.currentDir, this.getImageName(name + '-diff'));
 
           try {
-            const img1 = PNG.sync.read(fs.readFileSync(goldenImage));
-            const img2 = PNG.sync.read(fs.readFileSync(workImage));
-            const {width, height} = img1;
-            const diff = new PNG({width, height});
-            const pixelCountDiff = pixelmatch(
-              img1.data,
-              img2.data,
-              diff.data,
-              width,
-              height,
-              {threshold: 0.1},
-            );
-            const diffImageName = this.getImageName(name + '-diff');
-            fs.writeFileSync(
-              path.join(this.currentDir, diffImageName),
-              PNG.sync.write(diff),
-            );
-
-            try {
-              expect(pixelCountDiff).to.be(0);
-
-              if (operationDuration > expectedDuration * 1.2) {
-                this.failedTests++;
-                reject(
-                  new Error(
-                    `Operation took ${operationDuration}ms, expected to take around ${expectedDuration}ms.`,
-                  ),
-                );
-              } else {
-                resolve();
-              }
-            } catch (e) {
-              this.failedTests++;
-              reject(
-                new Error(
-                  `Actual differs from expected by ${pixelCountDiff} pixels (see ${diffImageName}).`,
-                ),
-              );
-            }
-          } catch (e) {
-            if (e.code === 'ENOENT' && e.path === goldenImage) {
-              // this is the first time we're running this test, pass
-              // this also has the benefit of bypassing initial duration limit, allowing this test to dictate the duration
+            let pixelCountDiff = this.diffImage(workImage, goldenImage, diffImage);
+            if (pixelCountDiff === null) {
+              // first time we're running this test
               resolve();
             } else {
-              this.failedTests++;
-              reject(e);
+              try {
+                expect(pixelCountDiff).to.be(0);
+
+                if (operationDuration > expectedDuration * 1.2) {
+                  this.failedTests++;
+                  reject(
+                    new Error(`Operation took ${operationDuration}ms, expected to take around ${expectedDuration}ms.`),
+                  );
+                } else {
+                  resolve();
+                }
+              } catch (e) {
+                this.failedTests++;
+                reject(
+                  new Error(`Actual differs from expected by ${pixelCountDiff} pixels (see ${diffImageName}).`),
+                );
+              }
             }
+          } catch (e) {
+            // an error occurred while comparing images
+            this.failedTests++;
+            reject(e);
           }
+
         }).catch(async e => {
           // document this failure, grab image for investigation and rethrow
           if (!this.currentConfig.tests[name]) {
@@ -620,6 +743,96 @@ class TestDrone extends Drone {
     if (definition.timeout instanceof Function) {
       definition.timeout(timeout);
     }
+  }
+
+  testAllStates(params, order) {
+    const stateDir = this.getDir('current/states');
+    let testOrder = order || this.shuffle(this.states);
+    let testedTransitions = {};
+
+    /*
+     * idea:
+     * traverse all states in random order, for each state:
+     * - capture any transition errors and fail test if any occur (making sure we end up in correct state is part of this)
+     * - take screenshot and note transition that got us here
+     * - if we already traversed this state, compare screenshots (fail if they don't match)
+     * - (bonus) if current page/state satisfies more than 1 state test, give a warning
+     * - (bonus) compare screenshots with last run for this state (fail if they don't match)
+     *
+     * for any state transitions that haven't been traversed, go to start state and test them as well
+     */
+
+    for (let state of testOrder) {
+      const thisStateDir = this.getDir(`current/states/${state.replace(/ /g, '\\ ')}`);
+      const definition = it(
+        `state navigation: ${state}`,
+        async () => {
+          if (!this.page) {
+            throw new Error('Browser has not been initialized, perhaps you forgot to run drone.start()?');
+          }
+
+          return new Promise(async (resolve, reject) => {
+            try {
+              const pathToState = this.findPathToState(state);
+              for (let transition in pathToState) {
+                testedTransitions[transition] = true;
+              }
+              await this.ensureState(state, async (page, params) => {
+                // state successfully loaded
+                const stateScreenshot = path.join(thisStateDir, pathToState[pathToState.length - 1] + '.png');
+                await this.page.screenshot({path: stateScreenshot});
+                // let pixelCountDiff = this.diffImage(startScreenshot, goldenImage, diffImage);
+              });
+            } catch (e) {
+              // couldn't navigate to this state
+              this.failedTests++;
+              reject(e);
+            }
+          });
+        },
+        timeout,
+      ); // for jest and jasmine
+
+      // for mocha
+      if (definition.timeout instanceof Function) {
+        definition.timeout(timeout);
+      }
+    }
+
+    // now run through remaining untested transitions
+    for (let transition of Object.keys(this.transitions)) {
+      const states = transition.split(' >> '); // 0 = start, 1 = end
+      const thisStateDir = this.getDir(`current/states/${states[0].replace(/ /g, '\\ ')}`);
+      if (testedTransitions[transition]) {
+        it(`transition navigation: ${states[0]} (tested with states)`, () => {
+          return;
+        });
+      } else {
+        // untraversed transition
+        const definition = it(
+          `transition navigation: ${states[0]}`,
+          async () => {
+            if (!this.page) {
+              throw new Error('Browser has not been initialized, perhaps you forgot to run drone.start()?');
+            }
+
+            await ensureState(states[0], async (page, params) => {
+              const stateScreenshot = path.join(thisStateDir, transition + '.png');
+              await this.traversePath(transition, 3);
+              await this.page.screenshot({ path: stateScreenshot });
+            });
+          },
+          timeout,
+        ); // for jest and jasmine
+
+        // for mocha
+        if (definition.timeout instanceof Function) {
+          definition.timeout(timeout);
+        }
+      }
+    }
+
+    // now test images
   }
 
   async stop() {

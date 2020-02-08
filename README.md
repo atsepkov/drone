@@ -5,8 +5,8 @@ Tests against different websites, rendering differences highlighted in red:
 ![investomation example](https://i.imgur.com/RjTcl3It.png 'Investomation')
 ![yahoo example](https://i.imgur.com/K8XlD57t.png 'Yahoo')
 
-Drone is a webapp UI test framework for lazy people, like myself. I should write more unit tests, but I'm a horrible person,
-so I don't. When my web apps break, they typically break in predictable ways, as a result of my refactoring.
+Drone is a web-scraping and web-testing framework for lazy people, like myself. I should write more unit tests, but I'm a 
+horrible person, so I don't. When my web apps break, they typically break in predictable ways, as a result of my refactoring.
 This tool helps me find these breakages quickly in a semi-automated way. Here is how it works:
 
 - you define a set of pages to navigate to and set of actions to perform
@@ -16,8 +16,6 @@ This tool helps me find these breakages quickly in a semi-automated way. Here is
 - any increase in load time greater than 20% results in a failed overall run
 - you can forgive individual failures using config, forcing a new successful run
 
-In addition to UI testing, Drone can also be used for webscraping. See usage section.
-
 ## Installation
 
     npm install test-drone
@@ -26,7 +24,7 @@ In addition to UI testing, Drone can also be used for webscraping. See usage sec
 
 There are 2 classes within this module:
 - `Drone` is a base class that can be spawned through Node directly and can be used for web-scraping.
-- `TestDrone` is a testing class extending it that performs screenshot-based testing.
+- `TestDrone` is a testing class extending it that performs screenshot-based testing, it can also be used to do your own tests, while giving state isolation on par with unit test frameworks to your UI tests.
 
 Both `Drone` and `TestDrone` allow 2 approaches to coding: imperative and declarative.
 You can see example usage for each one by looking at `example.js`, `example.declarative.js` and `example.test.js` files.
@@ -233,10 +231,10 @@ drone.addState('search results', async (page) => {
   return await page.$('.compPagination');
 });
 
-drone.addDefaultStateTransition('main page', (page) => {
+drone.addDefaultStateTransition('main page', async (page) => {
   await page.goto('https://yahoo.com');
 });
-drone.addStateTransition('main page', 'search results', (page, params) => {
+drone.addStateTransition('main page', 'search results', async (page, params) => {
   await page.focus('#uh-search-box');
   await page.keyboard.type(params.searchTerm);
   await page.keyboard.press('Enter');
@@ -270,7 +268,7 @@ describe('my test example', () => {
     });
   }});
 
-  drone.test('go to images tab', { async page => {
+  drone.test('go to images tab', { actions: async page => {
     drone.ensureState('search results', { searchTerm: apples }, async page => {
       let imagesTabLink = await page.elementWithText('Images');
       await Promise.all([
@@ -298,7 +296,26 @@ imperative approach will not.
 
 The other powerful feature of declarative mode is `TestDrone.testAllStates`, which will automatically navigate to
 every declared state in random order and test that this state works as expected, taking photos if there are issues. See
-[TestDrone.testAllStates](#testdronetestallstates-declarative-mode) for more info.
+[TestDrone.testAllStates](#testdronetestallstates-declarative-mode) for more info. Note that `drone.ensureState` can also be 
+called from your own tests to ensure consistent starting state for your own tests that will not break if previous UI tests fail:
+
+```
+describe('regular Jest tests', () => {
+
+  test('first test', () => {
+    drone.ensureState('page 1 loaded', { actions: async (page) => {
+      // you can be sure page 1 has been loaded when you call this
+    }});
+  });
+
+  test('second test', () => {
+    drone.ensureState('actions A and B have been performed on page 1', { actions: async (page) => {
+      // you can be sure page 1 is loaded and actions A and B have both been performed when you call this
+      // even if you skip previous test, or if previous test undoes action A you already performed earlier
+    }});
+  });
+});
+```
 
 ## Complete API
 
@@ -336,6 +353,29 @@ multiple calls to these methods but also that your starting state depends on the
 of this when caching partial operations, cached operations will skip navigation and page manipulation. However, do use caching
 whenever possible to avoid bombarding other sites with drones. Fly responsibly!
 
+#### Drone.baseStates (declarative mode)
+
+This property contains a list of all base states (as strings corresponding to names) added by the user (see `addState` method below).
+The property is auto-generated via a getter, so any changes you make to this list will have no effect on actual states.
+
+#### Drone.statesInLayer (declarative mode)
+
+This property contains a hash with composite layer names as keys and lists of composite state names corresponding to each layer as keys.
+For example, if you defined a composite layer named "login" with "logged in" and "logged out" states, you could access these states via
+`drone.statesInLayer["login"]`, see `addCompositeState` method below for more information.
+
+#### Drone.allStates (declarative mode)
+
+This property contains a list of all composite states that drone generates internally. All states in the list are in a hash format,
+containing name of original state name as value assigned to `base` key and composite values assigned to a key of same name as the
+composite layer that the state belongs to. For example, a state corresponding to main page while logged out would be expressed as
+follows:
+
+    {
+      base: 'main page',
+      login: 'logged out'
+    }
+
 #### Drone.addState (declarative mode)
 
     drone.addState(stateName: string, testCriteriaCallback: (page: puppeteer.Page, params: {}) => boolean)
@@ -349,6 +389,35 @@ to test description in Jest. The test criteria function is used by drone to deci
 a list of test criteria within it, with return value identifying whether you're in this state or not. Test criteria can be any checks 
 you choose to perform, from persence of certain elements, to text on the page, to cookies, etc. It's in your interest to make these as 
 specific as possible, you should make sure no other state can pass the combination of this test criteria.
+
+#### Drone.addCompositeState (declarative mode)
+
+    drone.addCompositeState(
+      stateName: { [layer: string] : string },
+      baseStateList: string[],
+      testCriteriaCallback: (page: puppeteer.Page, params: {}) => boolean
+    )
+
+Enhances base states with with a compositing layer, creating new states that represent a combination of multiple events. For example,
+the page you're on could be the base state, while being logged in or logged out could be a compositing layer. By defining this layer
+and identifying which base states this state can compose on, you can create more complex maps and conditional traversals (i.e. some
+pages may only be accessible while `logged in` - like profile, while others only while `logged out` - like the login page). A base state
+can be shared by multiple compositing states, but each base state must have at least one compositing state for each defined layer
+(i.e. you can't be on a page without being either logged in or logged out). For convenience, you can use `addDefaultCompositeState`
+method to apply a composite state to every uncaptured base state in this layer. Layers are automatically created as soon as you add
+the first composite state that uses that layer.
+
+#### Drone.addDefaultCompositeState (declarative mode)
+
+    addDefaultCompositeState(
+      stateName: { [layer: string] : string },
+      testCriteriaCallback: (page: puppeteer.Page, params: {}) => boolean
+    )
+
+Similar to `addCompositeState` except that this method uses all unused base states as its `baseStateList`. It's typically used as a catch-all
+for remaining base states that you don't want to manually list for a composite state. Note that that state list is generated at the time you
+call this function, so if you call this before you finish defining all other composite states for this layer, they will be added to default
+state as well, since they were undefined at the time of the call.
 
 #### Drone.addStateTransition (declarative mode)
 
@@ -421,6 +490,22 @@ Tells drone to find its way to either of the passed in states, whichever is fast
 either of the passed in states as a starting state. For example, in order to perform a new search query on Google, you can start
 at the home page (google.com) or any other page that has a search bar.
 
+#### Drone.shuffle
+
+    drone.shuffle(list: [])
+
+Returns a shuffled copy of the passed in list, useful for randomizing order of state traversal (i.e. during testing or if you
+want to avoid detection). Note that you can pass in a list of any elements, they do not need to be state names, they don't even 
+need to be strings.
+
+#### Drone.diffImage
+
+    drone.diffImage(workImage: string, goldenImage: string, diffImage: string)
+
+Given two absolute paths, compare images and return the number of pixels that differ, return null if `goldenImage` does not exist.
+This method can be used in your state checks or in your testing. It is automaticlaly invoked by `TestDrone.test`. It will also
+generate an image representing the diff and store it to file with `diffImage` path. Images should be in PNG format.
+
 ### TestDrone
 
 #### TestDrone.test
@@ -438,11 +523,17 @@ call it internally (see above example).
 
 #### TestDrone.testAllStates (declarative mode) (WORK IN PROGRESS)
 
-    drone.testAllStates(params: {}, order: string[])
+    drone.testAllStates(params: {}, order?: string[])
 
 Tests whether all requested states can be navigated to and whether all requested transitions result in correct state navigations.
 States will be checked in random order, to maximize coverage between runs, but you can pass an `order` you want them traversed in
-to override that. This test function alone can probably replace most of your UI tests.
+to override that. If passed in order only includes a subset of declared states, only those states will be tested, be careful if you
+add new states and use order, you may miss them. If you want to test all states in the same order you declared them, you can pass
+`drone.allStates` property as an argument to order, this property is auto-populated when you add a new state. If you only want to
+test a subset of declarted states, but test them in random order, you can use `TestDrone.shuffle` method on your list before passing
+it to `testAllStates`. The default call without order is equivalent to `drone.testAllStates({}, drone.shuffle(drone.allStates))`.
+
+**Tip**: This test function alone can probably replace most of your UI tests.
 
 ### Page
 
