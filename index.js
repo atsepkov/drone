@@ -342,7 +342,6 @@ class Drone {
     //   return [...new Set([...list, ...state.baseStateList])]
     // }, []);
 
-    // TODO: move this to separate function and use as test to throw error if layer has not been finished
     const baseStateList = this.states.filter(state => {
       for (let compositeState of Object.values(this.layers[layers[0]])) {
         if (compositeState.baseStateList.includes(state)) {

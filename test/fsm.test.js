@@ -141,6 +141,12 @@ describe("Composite States", () => {
     expect(drone.statesInLayer['logged in']).to.eql(['yes'])
   })
 
+  test("add duplicate composite state", () => {
+    expect(() => {
+      drone.addCompositeState({ 'logged in': 'yes' }, [], () => {})
+    }).to.throwError(/already exists/)
+  });
+
   test("missing composite state", () => {
     expect(() => {
       drone.allStates
@@ -158,7 +164,6 @@ describe("Composite States", () => {
     drone.addCompositeState({ 'logged in': 'no' }, ['foo', 'bar'], () => {
       return !mock['logged in']
     })
-    console.log(drone.allStates)
     expect(drone.statesInLayer['logged in']).to.eql(['yes', 'unknown', 'no'])
     expect(drone.allStates).to.eql([
       { base: 'foo', 'logged in': 'unknown'  },
@@ -171,4 +176,26 @@ describe("Composite States", () => {
     ])
   })
 
+  test("stacking composite layers", () => {
+    drone.addCompositeState({ vip: 'yes' }, ['bar', 'baz', 'qux'], () => {
+      return mock.vip
+    })
+    drone.addCompositeState({ vip: 'no' }, drone.baseStates, () => {
+      return !mock.vip
+    })
+    expect(Object.keys(drone.statesInLayer)).to.eql(['logged in', 'vip'])
+    expect(drone.allStates).to.eql([
+      { base: 'foo', 'logged in': 'unknown', vip: 'no' },
+      { base: 'foo', 'logged in': 'no', vip: 'no' },
+      { base: 'bar', 'logged in': 'yes', vip: 'yes' },
+      { base: 'bar', 'logged in': 'yes', vip: 'no' },
+      { base: 'bar', 'logged in': 'no', vip: 'yes' },   // technically this state shouldn't exist, but our logic allows it for now
+      { base: 'bar', 'logged in': 'no', vip: 'no' },
+      { base: 'baz', 'logged in': 'yes', vip: 'yes' },
+      { base: 'baz', 'logged in': 'yes', vip: 'no' },
+      { base: 'qux', 'logged in': 'yes', vip: 'yes' },
+      { base: 'qux', 'logged in': 'yes', vip: 'no' },
+      { base: 'qux1', 'logged in': 'unknown', vip: 'no' }
+    ])
+  })
 })
