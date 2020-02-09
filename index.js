@@ -28,6 +28,7 @@ class Drone {
     this.currentState = null;   // used to 'cache' current state to speed up some operations
 
     // composite states;
+    this.compositeFragments = [];   // tracks added fragments (to test duplicate declarations)
     this.layers = {};               // layers of composite states, each layer contains a set of states
     this.compositeStates = [];      // expanded composite states
     this.compositeTransitions = {}; // expanded composite state transitions
@@ -51,28 +52,49 @@ class Drone {
     return this.compositeStates.slice();
   }
 
+  // given a list of fragments, checks that state satisfies at least one of them
+  dependencySatisfied(fragmentList, state) {
+    console.log(fragmentList, state)
+    if (!fragmentList || !fragmentList.length) {
+      return true; // no dependencies
+    }
+
+    for (const fragment of fragmentList) {
+      let satisfies = true;
+      for (const [key, value] of Object.entries(fragment)) {
+        if (state[key] !== value) {
+          satisfies = false;
+          break; // failed at least 1 key
+        }
+      }
+      return satisfies; // all keys passed
+    }
+    return false; // haven't found dep where all keys passed
+  }
+
   // expands base states into composite states using layers
   computeCompositeStates() {
     let states = this.states.map(state => {
       return { base: state }
     });
-    for (const [layer, layerStates] of Object.entries(this.layers)) {
+    for (const [layer, layerStates] of Object.entries(this.layers)) { // loop through compositing layers
       let newStates = [];
-      for (const state of states) {
+      for (const state of states) { // loop through semi-generated composite states
         let baseState = state.base;
         let stateUsed = false;
-        for (const stateLayer of Object.keys(layerStates)) {
-          if (layerStates[stateLayer].baseStateList.includes(baseState)) {
+        for (const [stateLayer, fragment] of Object.entries(layerStates)) { // loop through all defined states for a given layer
+          if (fragment.baseStateList.includes(baseState) && this.dependencySatisfied(fragment.dependencies, state)) {
             stateUsed = true;
             newStates.push({
               ...state,
               [layer]: stateLayer
             })
           }
+          console.log(layer, state, stateLayer, stateUsed, fragment)
         }
-        if (!stateUsed) {
-          throw new Error(`No composite state of type "${layer}" exists for base state "${baseState}".`)
-        }
+        // if (!stateUsed) {
+        //   throw new Error(`No composite state of type "${layer}" exists for base state "${baseState}".`)
+        // }
       }
       states = newStates;
     }
@@ -312,31 +334,45 @@ class Drone {
   }
 
   // define a composite state (a modifier for base state, i.e. logged in)
-  addCompositeState(stateName, baseStateList, testCriteriaCallback) {
-    const layers = Object.keys(stateName);
-    if (layers.length !== 1) {
-      throw new Error(`Invalid format for composite state: ${JSON.stringify(stateName)}. Can only define one composite layer at a time.`)
-    } else if (this.layers[layers[0]] && stateName[layers[0]] in this.layers[layers[0]]) {
-      throw new Error(`Composite state "${JSON.stringify(stateName)}" already exists, please use unique state names.`);
+  addCompositeState(stateFields, baseStateList, testCriteriaCallback) {
+    const layers = Object.keys(stateFields);
+    const stateString = util.stateToString(stateFields);
+    if (this.compositeFragments.includes(stateString)) {
+      throw new Error(`Composite state "${stateString}" already exists, please use unique state names.`);
     }
+    this.compositeFragments.push(stateString);
 
-    if (!this.layers[layers[0]]) {
-      this.layers[layers[0]] = {};
+    let dependency = {}
+    for (const layer of layers) {
+      if (!this.layers[layer]) {
+        this.layers[layer] = {};
+      }
+      const stateLayer = this.layers[layer];
+      const stateField = stateFields[layer];
+      if (!stateLayer[stateField]) {
+        stateLayer[stateField] = {
+          baseStateList,
+          testCriteriaCallback,
+          dependencies: []
+        };
+      }
+      if (layers.length > 1) {
+        if (Object.keys(dependency).length) {
+          stateLayer[stateField].dependencies.push(dependency)
+        }
+        dependency = {...dependency, [layer]: stateField}
+        // dependency[layer] = stateField;
+      }
+      // console.log(layer, stateLayer, Object.values(stateLayer).map(a => a.dependencies))
     }
-    this.layers[layers[0]][stateName[layers[0]]] = {
-      baseStateList,
-      testCriteriaCallback,
-    };
   }
 
   // define default composite state (composite state that applies itself to all base states that do not yet have a composite state at this layer)
-  addDefaultCompositeState(stateName, testCriteriaCallback) {
-    const layers = Object.keys(stateName);
-    if (layers.length !== 1) {
-      throw new Error(`Invalid format for composite state: ${JSON.stringify(stateName)}. Can only define one composite layer at a time.`)
-    } else if (this.layers[layers[0]] && stateName[layers[0]] in this.layers[layers[0]]) {
-      throw new Error(`Composite state "${JSON.stringify(stateName)}" already exists, please use unique state names.`);
-    }
+  addDefaultCompositeState(stateFields, testCriteriaCallback) {
+    const layers = Object.keys(stateFields);
+    // if (this.layers[layers[0]] && stateName[layers[0]] in this.layers[layers[0]]) {
+    //   throw new Error(`Composite state "${JSON.stringify(stateName)}" already exists, please use unique state names.`);
+    // }
 
     // const baseStateList = Object.keys(this.layers[layers[0]]).reduce((list, state) => {
     //   return [...new Set([...list, ...state.baseStateList])]
@@ -354,7 +390,7 @@ class Drone {
     if (!this.layers[layers[0]]) {
       this.layers[layers[0]] = {};
     }
-    this.layers[layers[0]][stateName[layers[0]]] = {
+    this.layers[layers[0]][stateFields[layers[0]]] = {
       baseStateList,
       testCriteriaCallback,
     };

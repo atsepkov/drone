@@ -135,15 +135,15 @@ describe("Basic States", () => {
 describe("Composite States", () => {
 
   test("add composite state", () => {
-    drone.addCompositeState({ 'logged in': 'yes' }, ['bar', 'baz', 'qux'], () => {
-      return !!mock['logged in']
+    drone.addCompositeState({ 'gender': 'male' }, ['bar', 'baz', 'qux'], () => {
+      return !!mock['gender']
     })
-    expect(drone.statesInLayer['logged in']).to.eql(['yes'])
+    expect(drone.statesInLayer['gender']).to.eql(['male'])
   })
 
   test("add duplicate composite state", () => {
     expect(() => {
-      drone.addCompositeState({ 'logged in': 'yes' }, [], () => {})
+      drone.addCompositeState({ 'gender': 'male' }, [], () => {})
     }).to.throwError(/already exists/)
   });
 
@@ -154,42 +154,73 @@ describe("Composite States", () => {
   })
 
   test("default composite state", () => {
-    drone.addDefaultCompositeState({ 'logged in': 'unknown' }, () => {
+    drone.addDefaultCompositeState({ 'gender': 'unknown' }, () => {
       return false;
     })
-    expect(drone.layers['logged in']['unknown'].baseStateList).to.eql(['foo', 'qux1'])
+    expect(drone.layers['gender']['unknown'].baseStateList).to.eql(['foo', 'qux1'])
   })
 
   test("composite state overlap", () => {
-    drone.addCompositeState({ 'logged in': 'no' }, ['foo', 'bar'], () => {
-      return !mock['logged in']
+    drone.addCompositeState({ 'gender': 'female' }, ['bar', 'baz', 'qux1'], () => {
+      return !mock['gender']
     })
-    expect(drone.statesInLayer['logged in']).to.eql(['yes', 'unknown', 'no'])
+    expect(drone.statesInLayer['gender']).to.eql(['male', 'unknown', 'female'])
     expect(drone.allStates).to.eql([
-      { base: 'foo', 'logged in': 'unknown'  },
-      { base: 'foo', 'logged in': 'no'  },
-      { base: 'bar', 'logged in': 'yes'  },
-      { base: 'bar', 'logged in': 'no'  },
-      { base: 'baz', 'logged in': 'yes'  },
-      { base: 'qux', 'logged in': 'yes'  },
-      { base: 'qux1', 'logged in': 'unknown'  }
+      { base: 'foo', gender: 'unknown'  },
+      { base: 'bar', gender: 'male'  },
+      { base: 'bar', gender: 'female'  },
+      { base: 'baz', gender: 'male'  },
+      { base: 'baz', gender: 'female'  },
+      { base: 'qux', gender: 'male'  },
+      { base: 'qux1', gender: 'unknown'  },
+      { base: 'qux1', gender: 'female'  } 
     ])
   })
 
-  test("stacking composite layers", () => {
-    drone.addCompositeState({ vip: 'yes' }, ['bar', 'baz', 'qux'], () => {
-      return mock.vip
+  test("stacking composite layers (iterative)", () => {
+    drone.addCompositeState({ 'access': 'us' }, drone.baseStates, () => {
+      return mock.access === 'us'
     })
-    drone.addCompositeState({ vip: 'no' }, drone.baseStates, () => {
-      return !mock.vip
+    drone.addCompositeState({ 'access': 'international' }, drone.baseStates, () => {
+      return mock.access === 'international'
     })
-    expect(Object.keys(drone.statesInLayer)).to.eql(['logged in', 'vip'])
+    expect(Object.keys(drone.statesInLayer)).to.eql(['gender', 'access'])
+    expect(drone.allStates).to.eql([
+      { base: 'foo', gender: 'unknown', access: 'us'  },
+      { base: 'foo', gender: 'unknown', access: 'international' },
+      { base: 'bar', gender: 'male', access: 'us'  },
+      { base: 'bar', gender: 'male', access: 'international' },
+      { base: 'bar', gender: 'female', access: 'us'  },
+      { base: 'bar', gender: 'female', access: 'international' },
+      { base: 'baz', gender: 'male', access: 'us'  },
+      { base: 'baz', gender: 'male', access: 'international' },
+      { base: 'baz', gender: 'female', access: 'us'  },
+      { base: 'baz', gender: 'female', access: 'international' },
+      { base: 'qux', gender: 'male', access: 'us'  },
+      { base: 'qux', gender: 'male', access: 'international' },
+      { base: 'qux1', gender: 'unknown', access: 'us'  },
+      { base: 'qux1', gender: 'unknown', access: 'international' },
+      { base: 'qux1', gender: 'female', access: 'us'  },
+      { base: 'qux1', gender: 'female', access: 'international' }
+    ])
+  })
+
+  test("stacking composite layers (one step)", () => {
+    drone.addCompositeState({ 'logged in': 'yes', vip: 'no' }, ['bar', 'baz'], () => {
+      return mock['logged in'] && !mock.vip
+    })
+    drone.addCompositeState({ 'logged in': 'yes', vip: 'yes' }, ['bar', 'baz', 'qux', 'qux1'], () => {
+      return mock['logged in'] && mock.vip
+    })
+    drone.addCompositeState({ 'logged in': 'no', vip: 'no' }, ['foo', 'bar'], () => {
+      return !mock['logged in'] && !mock.vip
+    })
+    expect(Object.keys(drone.statesInLayer)).to.eql(['gender', 'access', 'logged in', 'vip'])
     expect(drone.allStates).to.eql([
       { base: 'foo', 'logged in': 'unknown', vip: 'no' },
       { base: 'foo', 'logged in': 'no', vip: 'no' },
       { base: 'bar', 'logged in': 'yes', vip: 'yes' },
       { base: 'bar', 'logged in': 'yes', vip: 'no' },
-      { base: 'bar', 'logged in': 'no', vip: 'yes' },   // technically this state shouldn't exist, but our logic allows it for now
       { base: 'bar', 'logged in': 'no', vip: 'no' },
       { base: 'baz', 'logged in': 'yes', vip: 'yes' },
       { base: 'baz', 'logged in': 'yes', vip: 'no' },
