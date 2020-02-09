@@ -355,6 +355,9 @@ class Drone {
           testCriteriaCallback,
           dependencies: []
         };
+      } else {
+        const orig = stateLayer[stateField].baseStateList;
+        stateLayer[stateField].baseStateList = [...orig, ...baseStateList.filter(item => orig.indexOf(item) < 0)]
       }
       if (layers.length > 1) {
         if (Object.keys(dependency).length) {
