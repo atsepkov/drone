@@ -247,4 +247,25 @@ describe("Composite States", () => {
       { base: 'qux1', gender: 'female', access: 'international', 'logged in': 'yes', vip: 'yes' }
     ])
   })
+
+  test("add duplicate stacking composite state", () => {
+    expect(() => {
+      drone.addCompositeState({ 'logged in': 'yes', vip: 'no' }, [], () => {})
+    }).to.throwError(/already exists/)
+  });
+
+  test("default stacking composite state", () => {
+    drone.addCompositeState({ 'item exists': 'yes', 'item visible': 'yes' }, ['baz', 'qux'], () => {
+      return mock['item exists'] && mock['item visible']
+    })
+    drone.addCompositeState({ 'item exists': 'yes', 'item visible': 'no' }, ['bar', 'baz'], () => {
+      return mock['item exists'] && !mock['item visible']
+    })
+    drone.addDefaultCompositeState({ 'item exists': 'no', 'item visible': 'no' }, () => {
+      return !mock['item exists'] && !mock['item visible']
+    })
+
+    expect(drone.layers['item exists']['no'].baseStateList).to.eql(['foo', 'qux1'])
+    expect(drone.layers['item visible']['no'].baseStateList).to.eql(['bar' , 'baz', 'foo', 'qux1'])
+  });
 })

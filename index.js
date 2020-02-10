@@ -372,30 +372,18 @@ class Drone {
   // define default composite state (composite state that applies itself to all base states that do not yet have a composite state at this layer)
   addDefaultCompositeState(stateFields, testCriteriaCallback) {
     const layers = Object.keys(stateFields);
-    // if (this.layers[layers[0]] && stateName[layers[0]] in this.layers[layers[0]]) {
-    //   throw new Error(`Composite state "${JSON.stringify(stateName)}" already exists, please use unique state names.`);
-    // }
-
-    // const baseStateList = Object.keys(this.layers[layers[0]]).reduce((list, state) => {
-    //   return [...new Set([...list, ...state.baseStateList])]
-    // }, []);
-
     const baseStateList = this.states.filter(state => {
-      for (let compositeState of Object.values(this.layers[layers[0]])) {
-        if (compositeState.baseStateList.includes(state)) {
-          return false;
+      for (const layer of layers) {
+        for (let compositeState of Object.values(this.layers[layer])) {
+          if (compositeState.baseStateList.includes(state)) {
+            return false;
+          }
         }
       }
       return true;
     });
 
-    if (!this.layers[layers[0]]) {
-      this.layers[layers[0]] = {};
-    }
-    this.layers[layers[0]][stateFields[layers[0]]] = {
-      baseStateList,
-      testCriteriaCallback,
-    };
+    this.addCompositeState(stateFields, baseStateList, testCriteriaCallback);
   }
 
   // define transition from startState to endState, optionally define cost (default = 1)

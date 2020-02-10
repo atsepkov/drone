@@ -431,6 +431,9 @@ for remaining base states that you don't want to manually list for a composite s
 call this function, so if you call this before you finish defining all other composite states for this layer, they will be added to default
 state as well, since they were undefined at the time of the call.
 
+When definining multiple layers at once, this method will fill each layer with proper defaults (see `test/fsm.test.js` `item exists` section
+for an example).
+
 #### Drone.addStateTransition (declarative mode)
 
     drone.addStateTransition(
