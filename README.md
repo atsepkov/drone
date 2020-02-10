@@ -407,6 +407,18 @@ can be shared by multiple compositing states, but each base state must have at l
 method to apply a composite state to every uncaptured base state in this layer. Layers are automatically created as soon as you add
 the first composite state that uses that layer.
 
+You can define multiple layers at once to create complex dependencies. For example, to create a login system with VIP membership, you
+can define 3 states as follows:
+
+    { 'logged in': 'y', 'vip': 'y' }
+    { 'logged in': 'y', 'vip': 'n' }
+    { 'logged in': 'n', 'vip': 'n' }
+
+By omitting the state where `logged in` is set to `n` and `vip` to `y`, you implicitly notify Drone that such state is not
+possible. Note that order of your properties in the hash matters, properties that appear later in the hash depend on those that appear
+earlier (you probably won't see a difference in the output, but it's an implementation detail that may matter if you're troubleshooting
+an edge case).
+
 #### Drone.addDefaultCompositeState (declarative mode)
 
     addDefaultCompositeState(
