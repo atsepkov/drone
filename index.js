@@ -28,7 +28,7 @@ class Drone {
     this.currentState = null;   // used to 'cache' current state to speed up some operations
 
     // composite states;
-    this.compositeFragments = [];   // tracks added fragments (to test duplicate declarations)
+    this.compositeFragments = {};   // tracks added fragments (to track duplicate declarations and base states)
     this.layers = {};               // layers of composite states, each layer contains a set of states
     this.compositeStates = [];      // expanded composite states
     this.compositeTransitions = {}; // expanded composite state transitions
@@ -53,21 +53,21 @@ class Drone {
   }
 
   // given a list of fragments, checks that state satisfies at least one of them
-  dependencySatisfied(fragmentList, state) {
-    console.log(fragmentList, state)
-    if (!fragmentList || !fragmentList.length) {
-      return true; // no dependencies
+  dependencySatisfied(baseState, fragment, state) {
+    const { dependencies, baseStateList } = fragment;
+    if (!dependencies || !dependencies.length) {
+      return baseStateList.includes(baseState); // no dependencies
     }
 
-    for (const fragment of fragmentList) {
-      let satisfies = true;
-      for (const [key, value] of Object.entries(fragment)) {
+    for (const dep of dependencies) {
+      let satisfies = dep.baseStateList.includes(baseState);
+      for (const [key, value] of Object.entries(dep.dependency)) {
         if (state[key] !== value) {
           satisfies = false;
           break; // failed at least 1 key
         }
       }
-      return satisfies; // all keys passed
+      if (satisfies) return true; // all keys passed
     }
     return false; // haven't found dep where all keys passed
   }
@@ -83,18 +83,17 @@ class Drone {
         let baseState = state.base;
         let stateUsed = false;
         for (const [stateLayer, fragment] of Object.entries(layerStates)) { // loop through all defined states for a given layer
-          if (fragment.baseStateList.includes(baseState) && this.dependencySatisfied(fragment.dependencies, state)) {
+          if (this.dependencySatisfied(baseState, fragment, state)) {
             stateUsed = true;
             newStates.push({
               ...state,
               [layer]: stateLayer
             })
           }
-          console.log(layer, state, stateLayer, stateUsed, fragment)
         }
-        // if (!stateUsed) {
-        //   throw new Error(`No composite state of type "${layer}" exists for base state "${baseState}".`)
-        // }
+        if (!stateUsed) {
+          throw new Error(`No composite state of type "${layer}" exists for base state "${baseState}".`)
+        }
       }
       states = newStates;
     }
@@ -337,10 +336,10 @@ class Drone {
   addCompositeState(stateFields, baseStateList, testCriteriaCallback) {
     const layers = Object.keys(stateFields);
     const stateString = util.stateToString(stateFields);
-    if (this.compositeFragments.includes(stateString)) {
+    if (Object.keys(this.compositeFragments).includes(stateString)) {
       throw new Error(`Composite state "${stateString}" already exists, please use unique state names.`);
     }
-    this.compositeFragments.push(stateString);
+    this.compositeFragments[stateString] = baseStateList;
 
     let dependency = {}
     for (const layer of layers) {
@@ -361,10 +360,10 @@ class Drone {
       }
       if (layers.length > 1) {
         if (Object.keys(dependency).length) {
-          stateLayer[stateField].dependencies.push(dependency)
+          stateLayer[stateField].dependencies.push({ dependency, baseStateList })
         }
+        // stack dependencies for next layer
         dependency = {...dependency, [layer]: stateField}
-        // dependency[layer] = stateField;
       }
       // console.log(layer, stateLayer, Object.values(stateLayer).map(a => a.dependencies))
     }

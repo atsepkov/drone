@@ -217,16 +217,34 @@ describe("Composite States", () => {
     })
     expect(Object.keys(drone.statesInLayer)).to.eql(['gender', 'access', 'logged in', 'vip'])
     expect(drone.allStates).to.eql([
-      { base: 'foo', 'logged in': 'unknown', vip: 'no' },
-      { base: 'foo', 'logged in': 'no', vip: 'no' },
-      { base: 'bar', 'logged in': 'yes', vip: 'yes' },
-      { base: 'bar', 'logged in': 'yes', vip: 'no' },
-      { base: 'bar', 'logged in': 'no', vip: 'no' },
-      { base: 'baz', 'logged in': 'yes', vip: 'yes' },
-      { base: 'baz', 'logged in': 'yes', vip: 'no' },
-      { base: 'qux', 'logged in': 'yes', vip: 'yes' },
-      { base: 'qux', 'logged in': 'yes', vip: 'no' },
-      { base: 'qux1', 'logged in': 'unknown', vip: 'no' }
+      { base: 'foo', gender: 'unknown', access: 'us', 'logged in': 'no', vip: 'no' },
+      { base: 'foo', gender: 'unknown', access: 'international', 'logged in': 'no', vip: 'no' },
+      { base: 'bar', gender: 'male', access: 'us', 'logged in': 'yes', vip: 'no' },
+      { base: 'bar', gender: 'male', access: 'us', 'logged in': 'yes', vip: 'yes' },
+      { base: 'bar', gender: 'male', access: 'us', 'logged in': 'no', vip: 'no' },
+      { base: 'bar', gender: 'male', access: 'international', 'logged in': 'yes', vip: 'no' },
+      { base: 'bar', gender: 'male', access: 'international', 'logged in': 'yes', vip: 'yes' },
+      { base: 'bar', gender: 'male', access: 'international', 'logged in': 'no', vip: 'no' },
+      { base: 'bar', gender: 'female', access: 'us', 'logged in': 'yes', vip: 'no' },
+      { base: 'bar', gender: 'female', access: 'us', 'logged in': 'yes', vip: 'yes' },
+      { base: 'bar', gender: 'female', access: 'us', 'logged in': 'no', vip: 'no' },
+      { base: 'bar', gender: 'female', access: 'international', 'logged in': 'yes', vip: 'no' },
+      { base: 'bar', gender: 'female', access: 'international', 'logged in': 'yes', vip: 'yes' },
+      { base: 'bar', gender: 'female', access: 'international', 'logged in': 'no', vip: 'no' },
+      { base: 'baz', gender: 'male', access: 'us', 'logged in': 'yes', vip: 'no' },
+      { base: 'baz', gender: 'male', access: 'us', 'logged in': 'yes', vip: 'yes' },
+      { base: 'baz', gender: 'male', access: 'international', 'logged in': 'yes', vip: 'no' },
+      { base: 'baz', gender: 'male', access: 'international', 'logged in': 'yes', vip: 'yes' },
+      { base: 'baz', gender: 'female', access: 'us', 'logged in': 'yes', vip: 'no' },
+      { base: 'baz', gender: 'female', access: 'us', 'logged in': 'yes', vip: 'yes' },
+      { base: 'baz', gender: 'female', access: 'international', 'logged in': 'yes', vip: 'no' },
+      { base: 'baz', gender: 'female', access: 'international', 'logged in': 'yes', vip: 'yes' },
+      { base: 'qux', gender: 'male', access: 'us', 'logged in': 'yes', vip: 'yes' },
+      { base: 'qux', gender: 'male', access: 'international', 'logged in': 'yes', vip: 'yes' },
+      { base: 'qux1', gender: 'unknown', access: 'us', 'logged in': 'yes', vip: 'yes' },
+      { base: 'qux1', gender: 'unknown', access: 'international', 'logged in': 'yes', vip: 'yes' },
+      { base: 'qux1', gender: 'female', access: 'us', 'logged in': 'yes', vip: 'yes' },
+      { base: 'qux1', gender: 'female', access: 'international', 'logged in': 'yes', vip: 'yes' }
     ])
   })
 })
