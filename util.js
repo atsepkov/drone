@@ -190,3 +190,12 @@ exports.tableToJson = async (page, table, options) => {
 exports.stateToString = (state) => {
     return JSON.stringify(state, Object.keys(state).sort());
 };
+
+exports.isSubstate = (subState, superState) => {
+  for (const [key, value] of Object.entries(subState)) {
+    if (superState[key] !== value) {
+      return false
+    }
+  }
+  return true
+}

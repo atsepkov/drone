@@ -422,7 +422,7 @@ an edge case).
 #### Drone.addDefaultCompositeState (declarative mode)
 
     addDefaultCompositeState(
-      stateName: { [layer: string] : string },
+      state: { [layer: string] : string },
       testCriteriaCallback: (page: puppeteer.Page, params: {}) => boolean
     )
 
@@ -454,7 +454,7 @@ will not terminate unless maximum number of retries has been reached.
 
 #### Drone.addDefaultStateTransition (declarative mode)
 
-    drone.addStateTransition(
+    drone.addDefaultStateTransition(
       endState: string,
       transitionLogicCallback: (page: puppeteer.Page, params: {}) => void,
       cost: number = 1
@@ -463,6 +463,37 @@ will not terminate unless maximum number of retries has been reached.
 Similar to `addStateTransition` except the start state is assumed to be any state the user didn't explicitly register. Drone will
 fallback to this if it ends up in a state it doesn't understand (an undocumented 404 page or server error). **Tip**: navigation to
 home page is a good default state transition to add.
+
+#### Drone.addCompositeStateTransition (declarative mode)
+
+    drone.addCompositeStateTransition(
+      startState: { [layer: string] : string },
+      endState: { [layer: string] : string },
+      transitionLogicCallback: (page: puppeteer.Page, params: {}) => void,
+      cost: number = 1
+    )
+
+Transition for composite layers of a state. Your starting state should define a subset of states of all layers that must be set for
+transition to occur. Your end state should define a subset of states guaranteed to be set by this transition. For example, if logging
+in occurs via `login screen` and results in a redirect to `main page`, the start state would be `{ base: 'login screen', login: 'no' }`
+and end state would be `{ base: 'main page', login: 'yes' }`. In this case, no other layer matters, so we exclude them from the
+declaration. On the other hand, if user was already logged in attempting to toggle some checkbox, we could represent the states as follows:
+
+    // if this checkbox is only available in logged in state, and 'some page' is available with and without login
+    startState: { base: 'some page', login: 'yes', checkbox: 'unchecked' }
+    endState:   { base: 'some page', login: 'yes', checkbox: 'checked' }
+
+    // if this checkbox is available with and without login or if the entire page is only visible while logged in
+    startState: { base: 'some page', checkbox: 'unchecked' }
+    endState:   { base: 'some page', checkbox: 'checked' }
+
+**Tip**: You can omit layers from `endState` that will not change from their `startState` during the transition.
+
+Note the difference, we only need to mention a layer if our ability to perform the transition depends on it. In second case, we don't depend
+on `login` state because our presence in starting state means that either login isn't needed, or we already logged in. You only need to
+define transitions that result in layer state changes, Drone will learn how to traverse your app from a combination of basic and composite
+transitions. Note that you don't even have to provide the base state for your transition, as long as that transition can be performed from
+any base state.
 
 #### Drone.whereAmI (declarative mode)
 

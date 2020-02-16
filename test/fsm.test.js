@@ -130,6 +130,16 @@ describe("Basic States", () => {
       expect(e.message).to.contain('No route')
     })
   })
+
+  test("allStates representation without compositing", async () => {
+    expect(drone.allStates).to.eql([
+      { base: 'foo' },
+      { base: 'bar' },
+      { base: 'baz' },
+      { base: 'qux' },
+      { base: 'qux1' },
+    ])
+  })
 });
 
 describe("Composite States", () => {
@@ -268,4 +278,45 @@ describe("Composite States", () => {
     expect(drone.layers['item exists']['no'].baseStateList).to.eql(['foo', 'qux1'])
     expect(drone.layers['item visible']['no'].baseStateList).to.eql(['bar' , 'baz', 'foo', 'qux1'])
   });
+
+  test("composite state transition with bad start state layer", () => {
+    expect(() => {
+      drone.addCompositeStateTransition({ 'logged in': 'yes', vip: 'no', 'parties': 'hard' }, { vip: 'yes' }, () => {})
+    }).to.throwError(/No generated state matches composite start/)
+  })
+
+  test("composite state transition with bad start state layer combination", () => {
+    // this tests a single multi-layer composite state
+    expect(() => {
+      drone.addCompositeStateTransition({ 'logged in': 'no', vip: 'yes' }, { vip: 'yes' }, () => {})
+    }).to.throwError(/No generated state matches composite start/)
+  })
+
+  test("composite state transition with bad start state layer combination 2", () => {
+    // this tests composite layer combining with base state it can't be a part of
+    expect(() => {
+      drone.addCompositeStateTransition({ 'base': 'qux1', gender: 'male' }, () => {})
+    }).to.throwError(/No generated state matches composite start/)
+  })
+
+  // below 3 tests not only test end state problem detection, but that tricky valid start states don't get flagged
+  test("composite state transition with bad end state layer", () => {
+    expect(() => {
+      drone.addCompositeStateTransition({ 'logged in': 'no' }, { 'logged in': 'yes', vip: 'no', 'parties': 'hard' }, () => {})
+    }).to.throwError(/No generated state matches composite end/)
+  })
+
+  test("composite state transition with bad end state layer combination", () => {
+    // this tests a single multi-layer composite state
+    expect(() => {
+      drone.addCompositeStateTransition({ 'base': 'bar', 'logged in': 'no' }, { 'logged in': 'no', vip: 'yes' }, () => {})
+    }).to.throwError(/No generated state matches composite end/)
+  })
+
+  test("composite state transition with bad end state layer combination 2", () => {
+    // this tests composite layer combining with base state it can't be a part of
+    expect(() => {
+      drone.addCompositeStateTransition({ 'access': 'international', 'logged in': 'yes' }, { 'base': 'qux1', gender: 'male' }, () => {})
+    }).to.throwError(/No generated state matches composite end/)
+  })
 })

@@ -21,14 +21,15 @@ class Drone {
     this.baseDir = __dirname;
 
     // state machine properties
-    this.stateTests = {};       // possible base states the system is aware of;
-    this.states = [];           // states defined earlier on have higher test priority;
-    this.transitions = {};      // base state transitions the system is aware of;
+    this.stateTests = {};       // possible base states the system is aware of
+    this.states = [];           // states defined earlier on have higher test priority
+    this.transitions = {};      // base state transitions the system is aware of
     this.neighbors = {};        // used by Dijsktra's algorithm to figure out how to traverse states
     this.currentState = null;   // used to 'cache' current state to speed up some operations
 
     // composite states;
     this.compositeFragments = {};   // tracks added fragments (to track duplicate declarations and base states)
+    this.fragmentTransitions = {};  // transitions for composite layers
     this.layers = {};               // layers of composite states, each layer contains a set of states
     this.compositeStates = [];      // expanded composite states
     this.compositeTransitions = {}; // expanded composite state transitions
@@ -52,7 +53,7 @@ class Drone {
     return this.compositeStates.slice();
   }
 
-  // given a list of fragments, checks that state satisfies at least one of them
+  // given a list of fragments, checks that state satisfies at least one of them (by being its superstate)
   dependencySatisfied(baseState, fragment, state) {
     const { dependencies, baseStateList } = fragment;
     if (!dependencies || !dependencies.length) {
@@ -60,14 +61,7 @@ class Drone {
     }
 
     for (const dep of dependencies) {
-      let satisfies = dep.baseStateList.includes(baseState);
-      for (const [key, value] of Object.entries(dep.dependency)) {
-        if (state[key] !== value) {
-          satisfies = false;
-          break; // failed at least 1 key
-        }
-      }
-      if (satisfies) return true; // all keys passed
+      if (dep.baseStateList.includes(baseState) && util.isSubstate(dep.dependency, state)) return true;
     }
     return false; // haven't found dep where all keys passed
   }
@@ -339,7 +333,7 @@ class Drone {
     if (Object.keys(this.compositeFragments).includes(stateString)) {
       throw new Error(`Composite state "${stateString}" already exists, please use unique state names.`);
     }
-    this.compositeFragments[stateString] = baseStateList;
+    this.compositeFragments[stateString] = { stateFields, baseStateList };
 
     let dependency = {}
     for (const layer of layers) {
@@ -430,6 +424,33 @@ class Drone {
       this.neighbors[BAD_STATE].push(endState);
     } else {
       this.neighbors[BAD_STATE] = [endState];
+    }
+  }
+
+  addCompositeStateTransition(startState, endState, transitionLogicCallback, cost) {
+    [startState, endState].forEach((requestedState, index) => {
+      let found = false;
+      for (const existingState of this.allStates) {
+        if (util.isSubstate(requestedState, existingState)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        throw new Error(`No generated state matches composite ${index ? 'end' : 'start'} state of ${util.stateToString(requestedState)}`);
+      }
+    })
+
+    const startString = util.stateToString(startState);
+    const transition = {
+      endState: endState,
+      cost: cost,
+      logic: transitionLogicCallback
+    }
+    if (this.fragmentTransitions[startString]) {
+      this.fragmentTransitions[startString].push(transition);
+    } else {
+      this.fragmentTransitions[startString] = [transition];
     }
   }
 
