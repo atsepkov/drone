@@ -283,6 +283,12 @@ describe("Composite States", () => {
     drone.addCompositeStateTransition({ base: 'baz', vip: 'no' }, { vip: 'yes' }, () => {
       mock.vip = 'yes'
     })
+    drone.addCompositeStateTransition({ base: 'baz', gender: 'male', vip: 'yes' }, { base: 'qux' }, () => {
+      mock.state = 'qux'
+    })
+    drone.addCompositeStateTransition({ base: 'baz', gender: 'female', vip: 'yes' }, { base: 'qux1' }, () => {
+      mock.state = 'qux1'
+    })
     console.log(drone.fragmentTransitions, Object.values(drone.fragmentTransitions)[0])
   })
 
@@ -332,5 +338,24 @@ describe("Composite States", () => {
     expect(() => {
       drone.addCompositeStateTransition({ base: 'qux1', gender: 'female' }, { gender: 'male' }, () => {})
     }).to.throwError(/No generated state matches composite end/)
+  })
+
+  test("getNeighbors (incomplete)", () => {
+    expect(() => {
+      drone.getNeighbors({ base: 'baz', gender: 'female' })
+    }).to.throwError(/getNeighbors\(\) requires complete state/)
+  })
+
+  test("getNeighbors", () => {
+    let a = drone.getNeighbors({
+      base: 'baz',
+      access: 'us',
+      gender: 'female',
+      'logged in': 'yes',
+      vip: 'no',
+      'item exists': 'no',
+      'item visible': 'no'
+    })
+    console.log(a)
   })
 })

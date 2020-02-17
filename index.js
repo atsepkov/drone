@@ -108,18 +108,29 @@ class Drone {
     if (typeof startState === 'string') {
       return this.neighbors[startState];
     } else {
-      let nextStates = this.neighbors[startState.base].map(state => {
-        return { base: state }
+      const nextStates = this.neighbors[startState.base].map(state => {
+        return { ...startState, base: state }
       });
       for (const layer of [ 'base', ...Object.keys(this.layers) ]) { // loop through compositing layers
         if (!(layer in startState)) {
           throw new Error(`Composite state for layer "${layer}" is missing from ${util.stateToString(startState)}, getNeighbors() requires complete state.`);
-        } else if (layer !== base) {
-          for (const state of nextStates) { // loop through semi-generated composite neighbor states
-            // TODO: generate possible next states via fragmentTransitions
-          }
         }
       }
+      for (const fragmentTransitionsFromState of Object.values(this.fragmentTransitions)) {
+        console.log("WTF", fragmentTransitionsFromState)
+        if (!fragmentTransitionsFromState.length || !util.isSubstate(fragmentTransitionsFromState[0].startState, startState)) {
+          continue;
+        }
+        console.log('P')
+        // we do no verification for valid end state here, since we assume addCompositeStateTransition safety check already handles it
+        for (const fragmentTransition of fragmentTransitionsFromState) {
+          nextStates.push({
+            ...startState,
+            ...fragmentTransition.endState
+          });
+        }
+      }
+      return nextStates;
     }
   }
 

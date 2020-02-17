@@ -191,6 +191,7 @@ exports.stateToString = (state) => {
     return JSON.stringify(state, Object.keys(state).sort());
 };
 
+// tests if a composite state fragment is a subset of a composite state
 exports.isSubstate = (subState, superState) => {
   for (const [key, value] of Object.entries(subState)) {
     if (superState[key] !== value) {
