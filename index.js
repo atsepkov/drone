@@ -53,6 +53,11 @@ class Drone {
     return this.compositeStates.slice();
   }
 
+  get allTransitions() {
+    this.computeCompositeTransitions();
+    return this.compositeTransitions.slice();
+  }
+
   // given a list of fragments, checks that state satisfies at least one of them (by being its superstate)
   dependencySatisfied(baseState, fragment, state) {
     const { dependencies, baseStateList } = fragment;
@@ -92,7 +97,30 @@ class Drone {
       states = newStates;
     }
     this.compositeStates = states;
-    // TODO: compute composite transitions
+  }
+
+  computeCompositeTransitions() {
+
+  }
+
+  getNeighbors(startState) {
+    const allStates = this.allStates;
+    if (typeof startState === 'string') {
+      return this.neighbors[startState];
+    } else {
+      let nextStates = this.neighbors[startState.base].map(state => {
+        return { base: state }
+      });
+      for (const layer of [ 'base', ...Object.keys(this.layers) ]) { // loop through compositing layers
+        if (!(layer in startState)) {
+          throw new Error(`Composite state for layer "${layer}" is missing from ${util.stateToString(startState)}, getNeighbors() requires complete state.`);
+        } else if (layer !== base) {
+          for (const state of nextStates) { // loop through semi-generated composite neighbor states
+            // TODO: generate possible next states via fragmentTransitions
+          }
+        }
+      }
+    }
   }
 
   // call this to setup and start the drone
@@ -427,8 +455,9 @@ class Drone {
     }
   }
 
-  addCompositeStateTransition(startState, endState, transitionLogicCallback, cost) {
-    [startState, endState].forEach((requestedState, index) => {
+  addCompositeStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
+    const fullEndState = { ...startState, ...endState };
+    [startState, fullEndState].forEach((requestedState, index) => {
       let found = false;
       for (const existingState of this.allStates) {
         if (util.isSubstate(requestedState, existingState)) {
@@ -443,7 +472,8 @@ class Drone {
 
     const startString = util.stateToString(startState);
     const transition = {
-      endState: endState,
+      startState,
+      endState: fullEndState,
       cost: cost,
       logic: transitionLogicCallback
     }
@@ -470,7 +500,7 @@ class Drone {
     return null;
   }
 
-  // computes shortest path to desired state using Dijstra's algorithm.
+  // computes shortest path to desired state using Dijkstra's algorithm.
   async findPathToState(stateName) {
     if (!this.states.includes(stateName)) {
       throw new Error(`Unknown state: "${stateName}", you must add this state to Drone first.`)
