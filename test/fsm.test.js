@@ -1,6 +1,7 @@
 
 const Drone = require("../index").Drone;
-let drone = new Drone(),
+let drone1 = new Drone(), // drone for simple tests
+    drone2 = new Drone(), // drone for composite tests
     mock = {
       state: null,
     },
@@ -10,28 +11,28 @@ describe("Basic States", () => {
 
   test("add states", () => {
     for (const state of states) {
-      drone.addState(state, () => {
+      drone1.addState(state, () => {
         return mock.state === state
       })
     }
     // console.log(expect([]))
-    expect(drone.baseStates).to.eql(states)
+    expect(drone1.baseStates).to.eql(states)
   });
 
   test("add duplicate state", () => {
     expect(() => {
-      drone.addState('foo', () => {})
+      drone1.addState('foo', () => {})
     }).to.throwError(/already exists/)
   });
 
   test("add state transitions", () => {
     states.forEach((start, index) => {
       let next = states[index + 1] || states[0]
-      drone.addStateTransition(start, next, () => {
+      drone1.addStateTransition(start, next, () => {
         mock.state = next;
       })
     })
-    expect(Object.keys(drone.transitions)).to.eql([
+    expect(Object.keys(drone1.transitions)).to.eql([
       'foo >> bar',
       'bar >> baz',
       'baz >> foo',
@@ -40,33 +41,33 @@ describe("Basic States", () => {
 
   test("add transition with bad start state", () => {
     expect(() => {
-      drone.addStateTransition('bird', 'foo', () => {})
+      drone1.addStateTransition('bird', 'foo', () => {})
     }).to.throwError(/does not exist/)
   });
 
   test("add transition with bad end state", () => {
     expect(() => {
-      drone.addStateTransition('foo', 'bird', () => {})
+      drone1.addStateTransition('foo', 'bird', () => {})
     }).to.throwError(/does not exist/)
   });
 
   test("add useless transition", () => {
     expect(() => {
-      drone.addStateTransition('foo', 'foo', () => {})
+      drone1.addStateTransition('foo', 'foo', () => {})
     }).to.throwError(/state to itself/)
   });
 
   test("add obsolete transition", () => {
     expect(() => {
-      drone.addStateTransition('foo', 'bar', () => {}, 2)
+      drone1.addStateTransition('foo', 'bar', () => {}, 2)
     }).to.throwError(/cheaper path/)
   });
 
   test("add default state transitions", () => {
-    drone.addDefaultStateTransition('foo', () => {
+    drone1.addDefaultStateTransition('foo', () => {
       mock.state = 'foo';
     }, 2)
-    expect(Object.keys(drone.transitions)).to.eql([
+    expect(Object.keys(drone1.transitions)).to.eql([
       'foo >> bar',
       'bar >> baz',
       'baz >> foo',
@@ -76,16 +77,16 @@ describe("Basic States", () => {
 
   test("add default transition with bad end state", () => {
     expect(() => {
-      drone.addDefaultStateTransition('bird', () => {})
+      drone1.addDefaultStateTransition('bird', () => {})
     }).to.throwError(/does not exist/)
   });
 
   test("whereAmI uninitialized", async () => {
-    expect(await drone.whereAmI()).to.be(null)
+    expect(await drone1.whereAmI()).to.be(null)
   })
 
   test("path finding from uninitialized state", async () => {
-    expect(await drone.findPathToState('baz')).to.eql([
+    expect(await drone1.findPathToState('baz')).to.eql([
       '< INVALID STATE > >> foo',
       'foo >> bar',
       'bar >> baz',
@@ -93,46 +94,46 @@ describe("Basic States", () => {
   })
 
   test("ensureState", async () => {
-    await drone.ensureState('bar')
-    expect(await drone.whereAmI()).to.be('bar')
+    await drone1.ensureState('bar')
+    expect(await drone1.whereAmI()).to.be('bar')
   })
 
   test("ensureState no route", async () => {
-    drone.addState('qux', () => {
+    drone1.addState('qux', () => {
       return mock.state === 'qux'
     })
-    await drone.ensureState('qux').then(_ => expect().fail()).catch(e => {
+    await drone1.ensureState('qux').then(_ => expect().fail()).catch(e => {
       expect(e.message).to.contain('No route')
     })
   })
 
   test("ensureState bad state", async () => {
-    await drone.ensureState('bird').then(_ => expect().fail()).catch(e => {
+    await drone1.ensureState('bird').then(_ => expect().fail()).catch(e => {
       expect(e.message).to.contain('Unknown state')
     })
     // expect(async () => {
-    //   await drone.ensureState('bird')
+    //   await drone1.ensureState('bird')
     // }).to.throwError(/Unknown state/)
   })
 
   test("ensureEitherState", async () => {
-    await drone.ensureState('bar')
-    await drone.ensureEitherState(['foo', 'baz'])
-    expect(await drone.whereAmI()).to.be('baz')
+    await drone1.ensureState('bar')
+    await drone1.ensureEitherState(['foo', 'baz'])
+    expect(await drone1.whereAmI()).to.be('baz')
   })
 
   test("ensureEitherState no route", async () => {
-    drone.addState('qux1', () => {
+    drone1.addState('qux1', () => {
       return mock.state === 'qux1'
     })
-    await drone.ensureState('bar')
-    await drone.ensureEitherState(['qux', 'qux1']).then(_ => expect().fail()).catch(e => {
+    await drone1.ensureState('bar')
+    await drone1.ensureEitherState(['qux', 'qux1']).then(_ => expect().fail()).catch(e => {
       expect(e.message).to.contain('No route')
     })
   })
 
   test("allStates representation without compositing", async () => {
-    expect(drone.allStates).to.eql([
+    expect(drone1.allStates).to.eql([
       { base: 'foo' },
       { base: 'bar' },
       { base: 'baz' },
@@ -144,38 +145,46 @@ describe("Basic States", () => {
 
 describe("Composite States", () => {
 
+  beforeAll(() => {
+    for (const state of [...states, 'qux', 'qux1']) {
+      drone2.addState(state, () => {
+        return mock.state === state
+      })
+    }
+  });
+
   test("add composite state", () => {
-    drone.addCompositeState({ 'gender': 'male' }, ['bar', 'baz', 'qux'], () => {
+    drone2.addCompositeState({ 'gender': 'male' }, ['bar', 'baz', 'qux'], () => {
       return !!mock['gender']
     })
-    expect(drone.statesInLayer['gender']).to.eql(['male'])
+    expect(drone2.statesInLayer['gender']).to.eql(['male'])
   })
 
   test("add duplicate composite state", () => {
     expect(() => {
-      drone.addCompositeState({ 'gender': 'male' }, [], () => {})
+      drone2.addCompositeState({ 'gender': 'male' }, [], () => {})
     }).to.throwError(/already exists/)
   });
 
   test("missing composite state", () => {
     expect(() => {
-      drone.allStates
+      drone2.allStates
     }).to.throwError(/No composite state/)
   })
 
   test("default composite state", () => {
-    drone.addDefaultCompositeState({ 'gender': 'unknown' }, () => {
+    drone2.addDefaultCompositeState({ 'gender': 'unknown' }, () => {
       return false;
     })
-    expect(drone.layers['gender']['unknown'].baseStateList).to.eql(['foo', 'qux1'])
+    expect(drone2.layers['gender']['unknown'].baseStateList).to.eql(['foo', 'qux1'])
   })
 
   test("composite state overlap", () => {
-    drone.addCompositeState({ 'gender': 'female' }, ['bar', 'baz', 'qux1'], () => {
+    drone2.addCompositeState({ 'gender': 'female' }, ['bar', 'baz', 'qux1'], () => {
       return !mock['gender']
     })
-    expect(drone.statesInLayer['gender']).to.eql(['male', 'unknown', 'female'])
-    expect(drone.allStates).to.eql([
+    expect(drone2.statesInLayer['gender']).to.eql(['male', 'unknown', 'female'])
+    expect(drone2.allStates).to.eql([
       { base: 'foo', gender: 'unknown'  },
       { base: 'bar', gender: 'male'  },
       { base: 'bar', gender: 'female'  },
@@ -188,14 +197,14 @@ describe("Composite States", () => {
   })
 
   test("stacking composite layers (iterative)", () => {
-    drone.addCompositeState({ 'access': 'us' }, drone.baseStates, () => {
+    drone2.addCompositeState({ 'access': 'us' }, drone2.baseStates, () => {
       return mock.access === 'us'
     })
-    drone.addCompositeState({ 'access': 'international' }, drone.baseStates, () => {
+    drone2.addCompositeState({ 'access': 'international' }, drone2.baseStates, () => {
       return mock.access === 'international'
     })
-    expect(Object.keys(drone.statesInLayer)).to.eql(['gender', 'access'])
-    expect(drone.allStates).to.eql([
+    expect(Object.keys(drone2.statesInLayer)).to.eql(['gender', 'access'])
+    expect(drone2.allStates).to.eql([
       { base: 'foo', gender: 'unknown', access: 'us'  },
       { base: 'foo', gender: 'unknown', access: 'international' },
       { base: 'bar', gender: 'male', access: 'us'  },
@@ -216,17 +225,17 @@ describe("Composite States", () => {
   })
 
   test("stacking composite layers (one step)", () => {
-    drone.addCompositeState({ 'logged in': 'yes', vip: 'no' }, ['bar', 'baz'], () => {
+    drone2.addCompositeState({ 'logged in': 'yes', vip: 'no' }, ['bar', 'baz'], () => {
       return mock['logged in'] && !mock.vip
     })
-    drone.addCompositeState({ 'logged in': 'yes', vip: 'yes' }, ['bar', 'baz', 'qux', 'qux1'], () => {
+    drone2.addCompositeState({ 'logged in': 'yes', vip: 'yes' }, ['bar', 'baz', 'qux', 'qux1'], () => {
       return mock['logged in'] && mock.vip
     })
-    drone.addCompositeState({ 'logged in': 'no', vip: 'no' }, ['foo', 'bar'], () => {
+    drone2.addCompositeState({ 'logged in': 'no', vip: 'no' }, ['foo', 'bar'], () => {
       return !mock['logged in'] && !mock.vip
     })
-    expect(Object.keys(drone.statesInLayer)).to.eql(['gender', 'access', 'logged in', 'vip'])
-    expect(drone.allStates).to.eql([
+    expect(Object.keys(drone2.statesInLayer)).to.eql(['gender', 'access', 'logged in', 'vip'])
+    expect(drone2.allStates).to.eql([
       { base: 'foo', gender: 'unknown', access: 'us', 'logged in': 'no', vip: 'no' },
       { base: 'foo', gender: 'unknown', access: 'international', 'logged in': 'no', vip: 'no' },
       { base: 'bar', gender: 'male', access: 'us', 'logged in': 'yes', vip: 'no' },
@@ -260,94 +269,94 @@ describe("Composite States", () => {
 
   test("add duplicate stacking composite state", () => {
     expect(() => {
-      drone.addCompositeState({ 'logged in': 'yes', vip: 'no' }, [], () => {})
+      drone2.addCompositeState({ 'logged in': 'yes', vip: 'no' }, [], () => {})
     }).to.throwError(/already exists/)
   });
 
   test("default stacking composite state", () => {
-    drone.addCompositeState({ 'item exists': 'yes', 'item visible': 'yes' }, ['baz', 'qux'], () => {
+    drone2.addCompositeState({ 'item exists': 'yes', 'item visible': 'yes' }, ['baz', 'qux'], () => {
       return mock['item exists'] && mock['item visible']
     })
-    drone.addCompositeState({ 'item exists': 'yes', 'item visible': 'no' }, ['bar', 'baz'], () => {
+    drone2.addCompositeState({ 'item exists': 'yes', 'item visible': 'no' }, ['bar', 'baz'], () => {
       return mock['item exists'] && !mock['item visible']
     })
-    drone.addDefaultCompositeState({ 'item exists': 'no', 'item visible': 'no' }, () => {
+    drone2.addDefaultCompositeState({ 'item exists': 'no', 'item visible': 'no' }, () => {
       return !mock['item exists'] && !mock['item visible']
     })
 
-    expect(drone.layers['item exists']['no'].baseStateList).to.eql(['foo', 'qux1'])
-    expect(drone.layers['item visible']['no'].baseStateList).to.eql(['bar' , 'baz', 'foo', 'qux1'])
+    expect(drone2.layers['item exists']['no'].baseStateList).to.eql(['foo', 'qux1'])
+    expect(drone2.layers['item visible']['no'].baseStateList).to.eql(['bar' , 'baz', 'foo', 'qux1'])
   });
 
   test("composite state transition", () => {
-    drone.addCompositeStateTransition({ base: 'baz', vip: 'no' }, { vip: 'yes' }, () => {
+    drone2.addCompositeStateTransition({ base: 'baz', vip: 'no' }, { vip: 'yes' }, () => {
       mock.vip = 'yes'
     })
-    drone.addCompositeStateTransition({ base: 'baz', gender: 'male', vip: 'yes' }, { base: 'qux' }, () => {
+    drone2.addCompositeStateTransition({ base: 'baz', gender: 'male', vip: 'yes' }, { base: 'qux' }, () => {
       mock.state = 'qux'
     })
-    drone.addCompositeStateTransition({ base: 'baz', gender: 'female', vip: 'yes' }, { base: 'qux1' }, () => {
+    drone2.addCompositeStateTransition({ base: 'baz', gender: 'female', vip: 'yes' }, { base: 'qux1' }, () => {
       mock.state = 'qux1'
     })
-    console.log(drone.fragmentTransitions, Object.values(drone.fragmentTransitions)[0])
+    console.log(drone2.fragmentTransitions, Object.values(drone2.fragmentTransitions)[0])
   })
 
   test("composite state transition with bad start state layer", () => {
     expect(() => {
-      drone.addCompositeStateTransition({ 'logged in': 'yes', vip: 'no', 'parties': 'hard' }, { vip: 'yes' }, () => {})
+      drone2.addCompositeStateTransition({ 'logged in': 'yes', vip: 'no', 'parties': 'hard' }, { vip: 'yes' }, () => {})
     }).to.throwError(/No generated state matches composite start/)
   })
 
   test("composite state transition with bad start state layer combination", () => {
     // this tests a single multi-layer composite state
     expect(() => {
-      drone.addCompositeStateTransition({ 'logged in': 'no', vip: 'yes' }, { vip: 'yes' }, () => {})
+      drone2.addCompositeStateTransition({ 'logged in': 'no', vip: 'yes' }, { vip: 'yes' }, () => {})
     }).to.throwError(/No generated state matches composite start/)
   })
 
   test("composite state transition with bad start state layer combination 2", () => {
     // this tests composite layer combining with base state it can't be a part of
     expect(() => {
-      drone.addCompositeStateTransition({ 'base': 'qux1', gender: 'male' }, () => {})
+      drone2.addCompositeStateTransition({ 'base': 'qux1', gender: 'male' }, () => {})
     }).to.throwError(/No generated state matches composite start/)
   })
 
   // below 4 tests not only test end state problem detection, but that tricky valid start states don't get flagged
   test("composite state transition with bad end state layer", () => {
     expect(() => {
-      drone.addCompositeStateTransition({ 'logged in': 'no' }, { 'logged in': 'yes', vip: 'no', 'parties': 'hard' }, () => {})
+      drone2.addCompositeStateTransition({ 'logged in': 'no' }, { 'logged in': 'yes', vip: 'no', 'parties': 'hard' }, () => {})
     }).to.throwError(/No generated state matches composite end/)
   })
 
   test("composite state transition with bad end state layer combination", () => {
     // this tests a single multi-layer composite state
     expect(() => {
-      drone.addCompositeStateTransition({ 'base': 'bar', 'logged in': 'no' }, { 'logged in': 'no', vip: 'yes' }, () => {})
+      drone2.addCompositeStateTransition({ 'base': 'bar', 'logged in': 'no' }, { 'logged in': 'no', vip: 'yes' }, () => {})
     }).to.throwError(/No generated state matches composite end/)
   })
 
   test("composite state transition with bad end state layer combination 2", () => {
     // this tests composite layer combining with base state it can't be a part of
     expect(() => {
-      drone.addCompositeStateTransition({ 'access': 'international', 'logged in': 'yes' }, { 'base': 'qux1', gender: 'male' }, () => {})
+      drone2.addCompositeStateTransition({ 'access': 'international', 'logged in': 'yes' }, { 'base': 'qux1', gender: 'male' }, () => {})
     }).to.throwError(/No generated state matches composite end/)
   })
 
   test("composite state transition with implicit bad end state layer combination", () => {
     // this tests composite layer combining with implicit base state it can't be a part of
     expect(() => {
-      drone.addCompositeStateTransition({ base: 'qux1', gender: 'female' }, { gender: 'male' }, () => {})
+      drone2.addCompositeStateTransition({ base: 'qux1', gender: 'female' }, { gender: 'male' }, () => {})
     }).to.throwError(/No generated state matches composite end/)
   })
 
   test("getNeighbors (incomplete)", () => {
     expect(() => {
-      drone.getNeighbors({ base: 'baz', gender: 'female' })
+      drone2.getNeighbors({ base: 'baz', gender: 'female' })
     }).to.throwError(/getNeighbors\(\) requires complete state/)
   })
 
   test("getNeighbors", () => {
-    let a = drone.getNeighbors({
+    let a = drone2.getNeighbors({
       base: 'baz',
       access: 'us',
       gender: 'female',
@@ -357,5 +366,12 @@ describe("Composite States", () => {
       'item visible': 'no'
     })
     console.log(a)
+  })
+
+  test("add composite state that causes earlier transition to create side-effects", () => {
+    // side-effect is created because gender can't exist in 'foo' state, yet transition bar >> foo doesn't factor that in
+    expect(() => {
+      drone1.addCompositeState({ 'gender': 'male' }, ['bar', 'baz', 'qux'], () => {})
+    }).to.throwError(/creates side-effects/)
   })
 })

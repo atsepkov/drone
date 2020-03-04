@@ -21,11 +21,11 @@ class Drone {
     this.baseDir = __dirname;
 
     // state machine properties
-    this.stateTests = {};       // possible base states the system is aware of
-    this.states = [];           // states defined earlier on have higher test priority
-    this.transitions = {};      // base state transitions the system is aware of
-    this.neighbors = {};        // used by Dijsktra's algorithm to figure out how to traverse states
-    this.currentState = null;   // used to 'cache' current state to speed up some operations
+    this.stateTests = {};           // possible base states the system is aware of
+    this.states = [];               // states by priority, states defined earlier on have higher test priority
+    this.transitions = {};          // base state transitions the system is aware of
+    this.neighbors = {};            // used by Dijsktra's algorithm to figure out how to traverse states
+    this.currentState = null;       // used to 'cache' current state to speed up some operations
 
     // composite states;
     this.compositeFragments = {};   // tracks added fragments (to track duplicate declarations and base states)
@@ -58,9 +58,9 @@ class Drone {
     return this.compositeTransitions.slice();
   }
 
-  // given a list of fragments, checks that state satisfies at least one of them (by being its superstate)
-  dependencySatisfied(baseState, fragment, state) {
-    const { dependencies, baseStateList } = fragment;
+  // given a list of fragments (dependencies), checks that state satisfies at least one of them (by being its superstate)
+  isDependencySatisfied(baseState, stateDependency, state) {
+    const { dependencies, baseStateList } = stateDependency;
     if (!dependencies || !dependencies.length) {
       return baseStateList.includes(baseState); // no dependencies
     }
@@ -81,8 +81,8 @@ class Drone {
       for (const state of states) { // loop through semi-generated composite states
         let baseState = state.base;
         let stateUsed = false;
-        for (const [stateLayer, fragment] of Object.entries(layerStates)) { // loop through all defined states for a given layer
-          if (this.dependencySatisfied(baseState, fragment, state)) {
+        for (const [stateLayer, stateDependency] of Object.entries(layerStates)) { // loop through all defined states for a given layer
+          if (this.isDependencySatisfied(baseState, stateDependency, state)) {
             stateUsed = true;
             newStates.push({
               ...state,
@@ -104,11 +104,11 @@ class Drone {
   }
 
   getNeighbors(startState) {
-    const allStates = this.allStates;
+    const neighbors = this.neighbors[startState.base] || [];
     if (typeof startState === 'string') {
-      return this.neighbors[startState];
+      return neighbors;
     } else {
-      const nextStates = this.neighbors[startState.base].map(state => {
+      const nextStates = neighbors.map(state => {
         return { ...startState, base: state }
       });
       for (const layer of [ 'base', ...Object.keys(this.layers) ]) { // loop through compositing layers
@@ -117,11 +117,9 @@ class Drone {
         }
       }
       for (const fragmentTransitionsFromState of Object.values(this.fragmentTransitions)) {
-        console.log("WTF", fragmentTransitionsFromState)
         if (!fragmentTransitionsFromState.length || !util.isSubstate(fragmentTransitionsFromState[0].startState, startState)) {
           continue;
         }
-        console.log('P')
         // we do no verification for valid end state here, since we assume addCompositeStateTransition safety check already handles it
         for (const fragmentTransition of fragmentTransitionsFromState) {
           nextStates.push({
@@ -417,6 +415,55 @@ class Drone {
     });
 
     this.addCompositeState(stateFields, baseStateList, testCriteriaCallback);
+  }
+
+  // returns a list of side-effects (empty if none), that is all additional layer transitions that would be required
+  // for this transition to be possible, this function tests 2 possible problems:
+  // 1. not every superstate of startState has a corresponding endState superstate
+  // 2. a single startState superstate resulting in multiple endState superstates
+  testTransitionSideEffects(startState, endState) {
+    const sideEffects = [];
+    const allStates = this.allStates();
+    const startSuperStates = allStates.filter(state => util.isSubstate(startState, state));
+    const endSuperStates = allStates.filter(state => util.isSubstate(endState, state));
+
+    const startSuperStatesUsed = {};
+    startSuperStates.forEach(state => {
+      const startSuperStateString = util.stateToString(state);
+      const expectedEndState = {
+        ...state,
+        ...endState
+      };
+      const expectedEndStateString = util.stateToString(expectedEndState);
+      for (const endSuperState of endSuperStates) {
+        if (util.stateToString(endSuperState) === expectedEndStateString) {
+          if (startSuperStatesUsed[startSuperStateString]) {
+            sideEffects.push(
+              `Can't traverse ${util.stateToString(startState)} to ${util.stateToString(endState)}. Multiple end states possible.`
+            );
+          } else {
+            startSuperStatesUsed[startSuperStateString] = true;
+          }
+        }
+      }
+      if (!startSuperStatesUsed[startSuperStateString]) {
+        sideEffects.push(
+          `Can't traverse ${util.stateToString(startState)} to ${util.stateToString(endState)}. No end state exists for start state: ${startSuperStateString}.`
+        );
+      }
+    });
+    return sideEffects;
+  }
+
+  // Same as above, but tests if existing transitions create side-effects
+  testStateSideEffects(fragment, baseStates) {
+    const superStates = this.allStates.filter(state => util.isSubstate(startState, state));
+
+  }
+
+  // returns true if all superstates of startState can transition to all superstates of endState, false otherwise
+  canTransitionWithoutSideEffects(startState, endState) {
+    return this.findSideEffects(startState, endState) == null;
   }
 
   // define transition from startState to endState, optionally define cost (default = 1)

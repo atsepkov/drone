@@ -536,6 +536,22 @@ Tells drone to find its way to either of the passed in states, whichever is fast
 either of the passed in states as a starting state. For example, in order to perform a new search query on Google, you can start
 at the home page (google.com) or any other page that has a search bar.
 
+#### testTransitionSideEffects (declarative mode)
+
+    drone.testSideEffects(
+      startState: { [layer: string] : string },
+      endState: { [layer: string] : string }
+    )
+
+Returns a list of all side-effects that a transition between 2 states would create, `startState` and `endState` don't need to be
+complete states, they may be state fragments. For example, on a typical website with login a start state of `{ 'base': 'main page' }`
+and end state of `{ 'base': 'user profile' }` would cause a side-effect of requiring login (represented as another state fragment
+you omitted from this check). Adding the corresponding "login" state fragments to `startState` and `endState` would resolve the
+side-effect. However, by doing so, you're telling Drone that your transition will be able to traverse between these two states in
+one operation (including logging in). This function is simply a test, it makes no changes to drone internals, but is useful when
+testing whether a transition between two states is possible. Attempting to create a state transition that violates this test will
+result in an error.
+
 #### Drone.shuffle
 
     drone.shuffle(list: [])
