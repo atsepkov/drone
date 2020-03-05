@@ -13,6 +13,31 @@ const BAD_STATE = '< INVALID STATE >';
  * Base class for puppeteer-powered browsing automation library.
  */
 class Drone {
+
+  /* TYPE ANNOTATIONS
+  
+  browser: puppeteer.Browser
+  page: puppeteer.Page
+  defaultTimeout: number
+  baseDir: string
+
+  stateTests: {
+    [stateName: string]: (page: puppeteer.Page, params: { [param: key]: any }) => boolean
+  }
+
+  states: { [priority: number]: string }
+  
+  neighbors: { [startState: string]: { [endState: string]: {
+    cost: number,
+    logic: (page: puppeteer.Page, params: { [param: key]: any }) => void
+  } } }
+
+  currentState: string | null
+
+  // composite annotations will be added later (after additional refactoring - StateHash abstraction)
+
+  */
+
   constructor() {
     // genreal properties
     this.browser = null;
@@ -23,8 +48,7 @@ class Drone {
     // state machine properties
     this.stateTests = {};           // possible base states the system is aware of
     this.states = [];               // states by priority, states defined earlier on have higher test priority
-    this.transitions = {};          // base state transitions the system is aware of
-    this.neighbors = {};            // used by Dijsktra's algorithm to figure out how to traverse states
+    this.neighbors = {};            // base state transitions the system is aware of,  used by Dijsktra's algorithm to figure out how to traverse states
     this.currentState = null;       // used to 'cache' current state to speed up some operations
 
     // composite states;
@@ -104,7 +128,7 @@ class Drone {
   }
 
   getNeighbors(startState) {
-    const neighbors = this.neighbors[startState.base] || [];
+    const neighbors = Object.keys(this.neighbors[startState.base] || {});
     if (typeof startState === 'string') {
       return neighbors;
     } else {
@@ -477,21 +501,22 @@ class Drone {
     } else if (startState === endState) {
       throw new Error(`Trying to add transition from state to itself (${startState}).`);
     } else if (
-      this.transitions[`${startState} >> ${endState}`] &&
-      this.transitions[`${startState} >> ${endState}`].cost <= cost
+      this.neighbors[startState] &&
+      this.neighbors[startState][endState] &&
+      this.neighbors[startState][endState].cost <= cost
     ) {
-      throw new Error(`A cheaper path (cost = ${this.transitions[`${startState} >> ${endState}`].cost}) from "${startState}" to "${endState}" already exists.`);
+      const oldCost = this.neighbors[startState][endState].cost;
+      throw new Error(`A cheaper path (cost = ${oldCost}) from "${startState}" to "${endState}" already exists.`);
     }
 
-    this.transitions[`${startState} >> ${endState}`] = {
+    let transition = {
       cost: cost,
       logic: transitionLogicCallback
     };
-    if (this.neighbors[startState]) {
-      this.neighbors[startState].push(endState);
-    } else {
-      this.neighbors[startState] = [endState];
+    if (!this.neighbors[startState]) {
+      this.neighbors[startState] = {};
     }
+    this.neighbors[startState][endState] = transition;
   }
 
   // define transition that is guaranteed to get us to this endState regardless of where
@@ -502,15 +527,14 @@ class Drone {
       throw new Error(`End state "${endState}" does not exist.`);
     }
 
-    this.transitions[`${BAD_STATE} >> ${endState}`] = {
+    let transition = {
       cost: cost,
       logic: transitionLogicCallback
     };
-    if (this.neighbors[BAD_STATE]) {
-      this.neighbors[BAD_STATE].push(endState);
-    } else {
-      this.neighbors[BAD_STATE] = [endState];
+    if (!this.neighbors[BAD_STATE]) {
+      this.neighbors[BAD_STATE] = {};
     }
+    this.neighbors[BAD_STATE][endState] = transition;
   }
 
   addCompositeStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
@@ -601,9 +625,8 @@ class Drone {
       });
       unvisited.splice(unvisited.indexOf(node), 1);
 
-      let where = await this.whereAmI();
-      (this.neighbors[node] || []).forEach(neighbor => {
-        let distance = minDistance + this.transitions[`${node} >> ${neighbor}`].cost;
+      (Object.keys(this.neighbors[node] || {})).forEach(neighbor => {
+        let distance = minDistance + this.neighbors[node][neighbor].cost;
         if (distance < vertices[neighbor].distance) {
           vertices[neighbor] = { distance, prev: node }
         }
@@ -612,14 +635,14 @@ class Drone {
 
     let current = stateName;
     let prev = vertices[stateName].prev;
-    const path = [`${prev} >> ${current}`];
+    const path = [ [prev, current] ];
     if (prev === null) {
       throw Error(`No route exists from "${startState}" (current) to "${stateName}" and no default route exists.`);
     }
     while (prev !== startState && prev !== BAD_STATE) {
       current = vertices[current].prev;
       prev = vertices[prev].prev;
-      path.unshift(`${prev} >> ${current}`);
+      path.unshift([prev, current]);
     }
     return path;
   }
@@ -628,14 +651,14 @@ class Drone {
   async traversePath(path, retries) {
 
     // perform navigation, return true if succeeded, false if failed
-    const attempt = async (route, desiredState) => {
-      await this.transitions[route].logic(this.page, this.params);
+    const attempt = async (start, end) => {
+      await this.neighbors[start][end].logic(this.page, this.params);
       let newState = await this.whereAmI();
-      if (newState !== desiredState) {
+      if (newState !== end) {
         if (newState === this.currentState) {
-          console.error(`Route "${route}" did not result in any state transition.`);
+          console.error(`Route "${start} >> ${end}" did not result in any state transition.`);
         } else {
-          console.error(`Route "${route}" resulted in transition to wrong state (${newState}).`);
+          console.error(`Route "${start} >> ${end}" resulted in transition to wrong state (${newState}).`);
           this.currentState = newState; // document transition to wrong state
         }
         return false;
@@ -645,17 +668,17 @@ class Drone {
 
     // now traverse the path
     for (const route of path) {
+      let [start, end] = route;
       let retryAttempts = 0;
       let success = false;
-      let desiredState = route.split(' >> ')[1];
       while (!success && retryAttempts < retries) {
-        success = await attempt(route, desiredState);
+        success = await attempt(start, end);
         retryAttempts++;
       }
       if (!success) {
-        throw new Error(`Failed to ensure "${stateName}" state, could not transition to state "${desiredState}" using route "${route}" after ${retries} attempts.`)
+        throw new Error(`Failed to traverse "${start} >> ${end}" route after ${retries} attempts.`)
       }
-      this.currentState = desiredState; // document transition to correct state
+      this.currentState = end; // document transition to correct state
     }
   }
 
@@ -675,7 +698,10 @@ class Drone {
     for (const state of stateList) {
       try {
         const path = await this.findPathToState(state, params);
-        const cost = path.reduce((cost, transition) => cost + this.transitions[transition].cost, 0);
+        const cost = path.reduce((cost, transition) => {
+          const [start, end] = transition;
+          return cost + this.neighbors[start][end].cost
+        }, 0);
         if (cost < cheapestCost) {
           cheapestCost = cost;
           cheapestPath = path;
@@ -897,7 +923,7 @@ class TestDrone extends Drone {
      */
 
     for (let state of testOrder) {
-      const thisStateDir = this.getDir(`current/states/${state.replace(/ /g, '\\ ')}`);
+      const thisStateDir = this.getDir(`${stateDir}/${state.replace(/ /g, '\\ ')}`);
       const definition = it(
         `state navigation: ${state}`,
         async () => {
@@ -909,12 +935,16 @@ class TestDrone extends Drone {
             try {
               const pathToState = this.findPathToState(state);
               for (let transition in pathToState) {
-                testedTransitions[transition] = true;
+                const [start, end] = transition;
+                if (!testedTransitions[start]) {
+                  testedTransitions[start] = {};
+                }
+                testedTransitions[start][end] = true;
               }
-              await this.ensureState(state, async (page, params) => {
+              await this.ensureState(state, async (page) => {
                 // state successfully loaded
                 const stateScreenshot = path.join(thisStateDir, pathToState[pathToState.length - 1] + '.png');
-                await this.page.screenshot({path: stateScreenshot});
+                await page.screenshot({path: stateScreenshot});
                 // let pixelCountDiff = this.diffImage(startScreenshot, goldenImage, diffImage);
               });
             } catch (e) {
@@ -934,34 +964,36 @@ class TestDrone extends Drone {
     }
 
     // now run through remaining untested transitions
-    for (let transition of Object.keys(this.transitions)) {
-      const states = transition.split(' >> '); // 0 = start, 1 = end
-      const thisStateDir = this.getDir(`current/states/${states[0].replace(/ /g, '\\ ')}`);
-      if (testedTransitions[transition]) {
-        it(`transition navigation: ${states[0]} (tested with states)`, () => {
-          return;
-        });
-      } else {
-        // untraversed transition
-        const definition = it(
-          `transition navigation: ${states[0]}`,
-          async () => {
-            if (!this.page) {
-              throw new Error('Browser has not been initialized, perhaps you forgot to run drone.start()?');
-            }
+    for (let start of Object.keys(this.neighbors)) {
+      for (let end of Object.keys(this.neighbors[start])) {
+        const thisStateDir = this.getDir(`${stateDir}/${start.replace(/ /g, '\\ ')}`);
+        if (testedTransitions[start][end]) {
+          it(`transition navigation: ${start} >> ${end} (tested with states)`, () => {
+            return;
+          });
+        } else {
+          // untraversed transition
+          const definition = it(
+            `transition navigation: ${start} >> ${end}`,
+            async () => {
+              if (!this.page) {
+                throw new Error('Browser has not been initialized, perhaps you forgot to run drone.start()?');
+              }
 
-            await ensureState(states[0], async (page, params) => {
-              const stateScreenshot = path.join(thisStateDir, transition + '.png');
-              await this.traversePath(transition, 3);
-              await this.page.screenshot({ path: stateScreenshot });
-            });
-          },
-          timeout,
-        ); // for jest and jasmine
+              await ensureState(start, async (page) => {
+                const transition = `${start} >> ${end}`;
+                const stateScreenshot = path.join(thisStateDir, transition + '.png');
+                await this.traversePath([start, end], 3);
+                await page.screenshot({ path: stateScreenshot });
+              });
+            },
+            timeout,
+          ); // for jest and jasmine
 
-        // for mocha
-        if (definition.timeout instanceof Function) {
-          definition.timeout(timeout);
+          // for mocha
+          if (definition.timeout instanceof Function) {
+            definition.timeout(timeout);
+          }
         }
       }
     }

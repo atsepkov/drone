@@ -7,6 +7,10 @@ let drone1 = new Drone(), // drone for simple tests
     },
     states = ['foo', 'bar', 'baz'];
 
+function getTransitionMap(drone) {
+  return Object.entries(drone.neighbors).map(([k, v]) => [k, Object.keys(v)])
+}
+
 describe("Basic States", () => {
 
   test("add states", () => {
@@ -32,10 +36,10 @@ describe("Basic States", () => {
         mock.state = next;
       })
     })
-    expect(Object.keys(drone1.transitions)).to.eql([
-      'foo >> bar',
-      'bar >> baz',
-      'baz >> foo',
+    expect(getTransitionMap(drone1)).to.eql([
+      ['foo', ['bar']],
+      ['bar', ['baz']],
+      ['baz', ['foo']],
     ])
   })
 
@@ -67,11 +71,11 @@ describe("Basic States", () => {
     drone1.addDefaultStateTransition('foo', () => {
       mock.state = 'foo';
     }, 2)
-    expect(Object.keys(drone1.transitions)).to.eql([
-      'foo >> bar',
-      'bar >> baz',
-      'baz >> foo',
-      '< INVALID STATE > >> foo'
+    expect(getTransitionMap(drone1)).to.eql([
+      ['foo', ['bar']],
+      ['bar', ['baz']],
+      ['baz', ['foo']],
+      ['< INVALID STATE >', ['foo']],
     ])
   })
 
@@ -87,9 +91,9 @@ describe("Basic States", () => {
 
   test("path finding from uninitialized state", async () => {
     expect(await drone1.findPathToState('baz')).to.eql([
-      '< INVALID STATE > >> foo',
-      'foo >> bar',
-      'bar >> baz',
+      ['< INVALID STATE >', 'foo'],
+      ['foo', 'bar'],
+      ['bar', 'baz'],
     ])
   })
 
