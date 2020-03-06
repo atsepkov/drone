@@ -34,7 +34,45 @@ class Drone {
 
   currentState: string | null
 
-  // composite annotations will be added later (after additional refactoring - StateHash abstraction)
+  compositeFragments: {
+    [stringifiedName: string]: {
+      stateFields: {
+        [layerName: string]: string
+      },
+      baseStateList: string[]
+    }
+  }
+
+  fragmentTransitions: {
+    [stringifiedStartFragment: string]: {
+      startState: StateFragment[],
+      endState: StateFragment[],
+      cost: number,
+      logic: (page: puppeteer.Page, params: { [param: key]: any }) => void
+    }
+  }
+  // TODO: fix, standardize (this is not currently representative of this object yet)
+  fragmentTransitions: { [startState: string]: { [endState: string]: {
+    cost: number,
+    logic: (page: puppeteer.Page, params: { [param: key]: any }) => void
+  } } }
+
+  layers: {
+    [layerName: string]: string[]
+  }
+
+  stateCache: {
+    [stringifiedFragment: string]: {
+      [layerName: string]: string
+    }
+  }
+
+  compositeStates: State[]
+
+  compositeTransitions: { [startState: string]: { [endState: string]: {
+    cost: number,
+    logic: (page: puppeteer.Page, params: { [param: key]: any }) => void
+  } } }
 
   */
 
@@ -55,6 +93,7 @@ class Drone {
     this.compositeFragments = {};   // tracks added fragments (to track duplicate declarations and base states)
     this.fragmentTransitions = {};  // transitions for composite layers
     this.layers = {};               // layers of composite states, each layer contains a set of states
+    this.stateCache = {};           // maps stringified state representation back to the corresponding object
     this.compositeStates = [];      // expanded composite states
     this.compositeTransitions = {}; // expanded composite state transitions
   }
@@ -538,8 +577,8 @@ class Drone {
   }
 
   addCompositeStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
-    const fullEndState = { ...startState, ...endState };
-    [startState, fullEndState].forEach((requestedState, index) => {
+    const expandedEndStateFragment = { ...startState, ...endState };
+    [startState, expandedEndStateFragment].forEach((requestedState, index) => {
       let found = false;
       for (const existingState of this.allStates) {
         if (util.isSubstate(requestedState, existingState)) {
@@ -553,17 +592,22 @@ class Drone {
     })
 
     const startString = util.stateToString(startState);
+    const endString = util.stateToString(endState);
+    this.stateCache[startString] = startState;
+    this.stateCache[endString] = endState;
+
     const transition = {
-      startState,
-      endState: fullEndState,
       cost: cost,
       logic: transitionLogicCallback
     }
-    if (this.fragmentTransitions[startString]) {
-      this.fragmentTransitions[startString].push(transition);
-    } else {
-      this.fragmentTransitions[startString] = [transition];
+    if (!this.fragmentTransitions[startString]) {
+      this.fragmentTransitions[startString] = {};
     }
+    if (this.fragmentTransitions[startString][endString] && this.fragmentTransitions[startString][endString].cost < cost) {
+      const oldCost = this.fragmentTransitions[startString][endString].cost;
+      throw new Error(`A cheaper path (cost = ${oldCost}) for ${startString} >> ${endString} transition already exists.`);
+    }
+    this.fragmentTransitions[startString][endString] = transition;
   }
 
   // figures out current state and returns its name to the user, returns null if no states match

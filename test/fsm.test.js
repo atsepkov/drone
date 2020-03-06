@@ -1,4 +1,4 @@
-
+const util = require("../util");
 const Drone = require("../index").Drone;
 let drone1 = new Drone(), // drone for simple tests
     drone2 = new Drone(), // drone for composite tests
@@ -62,9 +62,21 @@ describe("Basic States", () => {
   });
 
   test("add obsolete transition", () => {
+    // transition obsoleted by a cheaper, earlier declared transition
+    expect(drone1.neighbors['foo']['bar'].cost).to.equal(1)
     expect(() => {
       drone1.addStateTransition('foo', 'bar', () => {}, 2)
     }).to.throwError(/cheaper path/)
+    expect(drone1.neighbors['foo']['bar'].cost).to.equal(1)
+  });
+
+  test("add better transition", () => {
+    // transition making earlier transition obsolete
+    expect(drone1.neighbors['foo']['bar'].cost).to.equal(1)
+    drone1.addStateTransition('foo', 'bar', () => {
+      mock.state = 'bar'
+    }, 0.5)
+    expect(drone1.neighbors['foo']['bar'].cost).to.equal(0.5)
   });
 
   test("add default state transitions", () => {
@@ -292,7 +304,7 @@ describe("Composite States", () => {
     expect(drone2.layers['item visible']['no'].baseStateList).to.eql(['bar' , 'baz', 'foo', 'qux1'])
   });
 
-  test("composite state transition", () => {
+  test("add composite state transition", () => {
     drone2.addCompositeStateTransition({ base: 'baz', vip: 'no' }, { vip: 'yes' }, () => {
       mock.vip = 'yes'
     })
@@ -304,6 +316,32 @@ describe("Composite States", () => {
     })
     console.log(drone2.fragmentTransitions, Object.values(drone2.fragmentTransitions)[0])
   })
+
+  test("add obsolete composite state transition", () => {
+    // transition obsoleted by a cheaper, earlier declared transition
+    const start = { base: 'baz', vip: 'no' };
+    const end = { vip: 'yes' };
+    const startString = util.stateToString(start);
+    const endString = util.stateToString(end);
+    expect(drone2.fragmentTransitions[startString][endString].cost).to.equal(1)
+    expect(() => {
+      drone2.addCompositeStateTransition(start, end, () => {}, 2)
+    }).to.throwError(/cheaper path/)
+    expect(drone2.fragmentTransitions[startString][endString].cost).to.equal(1)
+  })
+
+  test("add better composite state transition", () => {
+    // transition making an earlier transition obsolete
+    const start = { base: 'baz', vip: 'no' };
+    const end = { vip: 'yes' };
+    const startString = util.stateToString(start);
+    const endString = util.stateToString(end);
+    expect(drone2.fragmentTransitions[startString][endString].cost).to.equal(1)
+    drone2.addCompositeStateTransition(start, end, () => {
+      mock.vip = 'yes'
+    }, 0.5)
+    expect(drone2.fragmentTransitions[startString][endString].cost).to.equal(0.5)
+  });
 
   test("composite state transition with bad start state layer", () => {
     expect(() => {
