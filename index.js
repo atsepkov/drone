@@ -43,15 +43,6 @@ class Drone {
     }
   }
 
-  fragmentTransitions: {
-    [stringifiedStartFragment: string]: {
-      startState: StateFragment[],
-      endState: StateFragment[],
-      cost: number,
-      logic: (page: puppeteer.Page, params: { [param: key]: any }) => void
-    }
-  }
-  // TODO: fix, standardize (this is not currently representative of this object yet)
   fragmentTransitions: { [startState: string]: { [endState: string]: {
     cost: number,
     logic: (page: puppeteer.Page, params: { [param: key]: any }) => void
@@ -59,12 +50,6 @@ class Drone {
 
   layers: {
     [layerName: string]: string[]
-  }
-
-  stateCache: {
-    [stringifiedFragment: string]: {
-      [layerName: string]: string
-    }
   }
 
   compositeStates: State[]
@@ -93,7 +78,6 @@ class Drone {
     this.compositeFragments = {};   // tracks added fragments (to track duplicate declarations and base states)
     this.fragmentTransitions = {};  // transitions for composite layers
     this.layers = {};               // layers of composite states, each layer contains a set of states
-    this.stateCache = {};           // maps stringified state representation back to the corresponding object
     this.compositeStates = [];      // expanded composite states
     this.compositeTransitions = {}; // expanded composite state transitions
   }
@@ -111,9 +95,19 @@ class Drone {
     return statesByLayer;
   }
 
-  get allStates() {
+  // returns a list of expanded states that match passed in filter, if no filter is passed, returns all expanded states.
+  allStates(filter) {
     this.computeCompositeStates();
-    return this.compositeStates.slice();
+    if (filter) {
+      for (const layer of Object.keys(filter)) {
+        if (layer !== 'base' && !this.layers[layer]) {
+          throw new Error(`Compositing layer "${layer}" doesn't exist.`);
+        }
+      }
+      return util.filterByLayer(this.compositeStates, filter);
+    } else {
+      return this.compositeStates.slice();
+    }
   }
 
   get allTransitions() {
@@ -167,28 +161,42 @@ class Drone {
   }
 
   getNeighbors(startState) {
-    const neighbors = Object.keys(this.neighbors[startState.base] || {});
     if (typeof startState === 'string') {
-      return neighbors;
-    } else {
-      const nextStates = neighbors.map(state => {
-        return { ...startState, base: state }
-      });
-      for (const layer of [ 'base', ...Object.keys(this.layers) ]) { // loop through compositing layers
-        if (!(layer in startState)) {
-          throw new Error(`Composite state for layer "${layer}" is missing from ${util.stateToString(startState)}, getNeighbors() requires complete state.`);
-        }
+      if (!this.stateTests[startState]) {
+        throw new Error(`"${startState}" is not a valid state.`);
       }
-      for (const fragmentTransitionsFromState of Object.values(this.fragmentTransitions)) {
-        if (!fragmentTransitionsFromState.length || !util.isSubstate(fragmentTransitionsFromState[0].startState, startState)) {
-          continue;
+      return Object.keys(this.neighbors[startState] || {});
+    } else {
+      const startString = util.stateToString(startState);
+      const nextStates = [];
+      // for (const layer of [ 'base', ...Object.keys(this.layers) ]) { // loop through compositing layers
+      //   if (!(layer in startState)) {
+      //     throw new Error(`Composite state for layer "${layer}" is missing from ${startString}, getNeighbors() requires complete state.`);
+      //   }
+      // }
+
+      if (!this.isValidState(startState)) {
+        throw new Error(`${startString} is not a valid state.`);
+      }
+
+      let found = false;
+      for (const fullState of this.allStates(startState)) {
+        if (found) {
+          throw new Error(`Multiple composite states match ${startString}, define more layers to resolve ambiguity.`)
         }
-        // we do no verification for valid end state here, since we assume addCompositeStateTransition safety check already handles it
-        for (const fragmentTransition of fragmentTransitionsFromState) {
-          nextStates.push({
-            ...startState,
-            ...fragmentTransition.endState
-          });
+        found = true
+
+        for (const stateString of Object.keys(this.fragmentTransitions)) {
+          if (util.isSubstate(util.stringToState(stateString), fullState)) {
+            // we do no verification for valid end state here, since we assume addCompositeStateTransition safety check already handles it
+            for (const endStateString of Object.keys(this.fragmentTransitions[stateString])) {
+              const endState = util.stringToState(endStateString);
+              nextStates.push({
+                ...startState,
+                ...endState
+              });
+            }
+          }
         }
       }
       return nextStates;
@@ -520,7 +528,7 @@ class Drone {
 
   // Same as above, but tests if existing transitions create side-effects
   testStateSideEffects(fragment, baseStates) {
-    const superStates = this.allStates.filter(state => util.isSubstate(startState, state));
+    const superStates = this.allStates().filter(state => util.isSubstate(startState, state));
 
   }
 
@@ -556,6 +564,14 @@ class Drone {
       this.neighbors[startState] = {};
     }
     this.neighbors[startState][endState] = transition;
+
+    const startString = util.stateToString({ base: startState });
+    const endString = util.stateToString({ base: endState });
+
+    if (!this.fragmentTransitions[startString]) {
+      this.fragmentTransitions[startString] = {};
+    }
+    this.fragmentTransitions[startString][endString] = transition;
   }
 
   // define transition that is guaranteed to get us to this endState regardless of where
@@ -576,25 +592,28 @@ class Drone {
     this.neighbors[BAD_STATE][endState] = transition;
   }
 
+  // returns true if this state exists based on combination of state fragments, false otherwise
+  isValidState(state) {
+    let found = false;
+    for (const existingState of this.allStates()) {
+      if (util.isSubstate(state, existingState)) {
+        found = true;
+        break;
+      }
+    }
+    return found;
+  }
+
   addCompositeStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
     const expandedEndStateFragment = { ...startState, ...endState };
     [startState, expandedEndStateFragment].forEach((requestedState, index) => {
-      let found = false;
-      for (const existingState of this.allStates) {
-        if (util.isSubstate(requestedState, existingState)) {
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
+      if (!this.isValidState(requestedState)) {
         throw new Error(`No generated state matches composite ${index ? 'end' : 'start'} state of ${util.stateToString(requestedState)}`);
       }
     })
 
     const startString = util.stateToString(startState);
     const endString = util.stateToString(endState);
-    this.stateCache[startString] = startState;
-    this.stateCache[endString] = endState;
 
     const transition = {
       cost: cost,

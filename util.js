@@ -187,16 +187,35 @@ exports.tableToJson = async (page, table, options) => {
 };
 
 // converts composite state to string
+const stateCache = {};
 exports.stateToString = (state) => {
-    return JSON.stringify(state, Object.keys(state).sort());
+  const string = JSON.stringify(state, Object.keys(state).sort());
+  stateCache[string] = state;
+  return string;
+};
+
+// reverses above operation
+exports.stringToState = (string) => {
+  return stateCache[string];
 };
 
 // tests if a composite state fragment is a subset of a composite state
 exports.isSubstate = (subState, superState) => {
   for (const [key, value] of Object.entries(subState)) {
     if (superState[key] !== value) {
-      return false
+      return false;
     }
   }
-  return true
-}
+  return true;
+};
+
+exports.filterByLayer = (states, filteredProps) => {
+  return states.filter(state => {
+    for (const [key, val] of Object.entries(filteredProps)) {
+      if (state[key] !== val) {
+        return false;
+      }
+    }
+    return true;
+  });
+};

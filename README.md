@@ -366,7 +366,9 @@ For example, if you defined a composite layer named "login" with "logged in" and
 
 #### Drone.allStates (declarative mode)
 
-This property contains a list of all composite states that drone generates internally. All states in the list are in a hash format,
+    drone.addStates(filter?: { [layer: string]: string })
+
+Returns a list of all composite states that drone generates internally. All states in the list are in object format,
 containing name of original state name as value assigned to `base` key and composite values assigned to a key of same name as the
 composite layer that the state belongs to. For example, a state corresponding to main page while logged out would be expressed as
 follows:
@@ -375,6 +377,8 @@ follows:
       base: 'main page',
       login: 'logged out'
     }
+
+This function takes an optional state fragment to filter by (eliminating all states that don't satisfy the fragment from return list).
 
 #### Drone.addState (declarative mode)
 
@@ -390,10 +394,16 @@ a list of test criteria within it, with return value identifying whether you're 
 you choose to perform, from persence of certain elements, to text on the page, to cookies, etc. It's in your interest to make these as 
 specific as possible, you should make sure no other state can pass the combination of this test criteria.
 
+#### Drone.isValidState (declarative mode)
+
+    drone.isValidState(state: { [layer: string]: string })
+
+Returns true if requested layer combination (state) is possible based on defined states in the state machine, false otherwise.
+
 #### Drone.addCompositeState (declarative mode)
 
     drone.addCompositeState(
-      stateName: { [layer: string] : string },
+      state: { [layer: string] : string },
       baseStateList: string[],
       testCriteriaCallback: (page: puppeteer.Page, params: {}) => boolean
     )
@@ -502,6 +512,15 @@ any base state.
 You can call this at any time to ask drone to classify the current state you're in based on state test criteria you specified when
 registering your states. Drone will return `stateName` string that you assigned to this state. If drone can't determine the state,
 it will return the string `<< INVALID STATE >>`. Attempting to transition from this state will invoke deftault state transition.
+
+#### Drone.getNeighbors (declarative mode)
+
+    drone.getNeighbors(state: { [layer: string]: string } | string)
+
+Given a set of state properties (or a string corresponding to base state), finds the full state implied by this set of properties,
+and returns all neighbor states. If requested set of properties expands to more than one state, raises an ambiguity error. To see if your
+requested state will result in an ambiguity error, call `drone.allStates` with this state as `filter` argument (if returned list contains
+more than 1 element, you will get an ambiguity error, if returned list contains no elements, you will get an invalid state error).
 
 #### Drone.findPathToState (declarative mode)
 
