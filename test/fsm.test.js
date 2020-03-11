@@ -295,6 +295,7 @@ describe("Composite States", () => {
     ])
   })
 
+  // NOTE: these tests should really be with getNeighbors, but they become too verbose later
   test("allStates filter", () => {
     expect(drone2.allStates({
       gender: 'male'
@@ -490,7 +491,7 @@ describe("Composite States", () => {
     })).to.not.be.ok();
   })
 
-  test("getNeighbors (incomplete)", () => {
+  test("getNeighbors (ambiguity)", () => {
     expect(() => {
       drone2.getNeighbors({ base: 'baz', gender: 'female' })
     }).to.throwError(/define more layers to resolve ambiguity/)
