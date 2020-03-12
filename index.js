@@ -16,13 +16,30 @@ class Drone {
 
   /* TYPE ANNOTATIONS
   
+  interface StateFragment: {
+    [layerName: string]: string
+  }
+  
+  interface State: {
+    base: string
+    ...StateFragment
+  }
+
+  interface StateDependency {
+    dependency: StateFragment
+    baseStateList: string[]
+  }
+  
+  type TestFunction = async (page: puppeteer.Page, params: { [param: key]: any }) => boolean
+  type TransitionFunction = async (page: puppeteer.Page, params: { [param: key]: any }) => void
+  
   browser: puppeteer.Browser
   page: puppeteer.Page
   defaultTimeout: number
   baseDir: string
 
   stateTests: {
-    [stateName: string]: (page: puppeteer.Page, params: { [param: key]: any }) => boolean
+    [stateName: string]: TestFunction
   }
 
   states: { [priority: number]: string }
@@ -36,28 +53,38 @@ class Drone {
 
   compositeFragments: {
     [stringifiedName: string]: {
-      stateFields: {
-        [layerName: string]: string
-      },
+      stateFields: StateFragment,
       baseStateList: string[]
     }
   }
 
   fragmentTransitions: { [startState: string]: { [endState: string]: {
     cost: number,
-    logic: (page: puppeteer.Page, params: { [param: key]: any }) => void
+    logic: TransitionFunction
   } } }
 
   layers: {
-    [layerName: string]: string[]
+    [layerName: string]: {
+      [stateName: string]: {
+        baseStateList: string[],
+        testCriteriaCallback: TestFunction,
+        dependencies: StateDependency[]
+      }
+    }
   }
 
   compositeStates: State[]
 
   compositeTransitions: { [startState: string]: { [endState: string]: {
     cost: number,
-    logic: (page: puppeteer.Page, params: { [param: key]: any }) => void
+    logic: TransitionFunction
   } } }
+
+  occlusions: {
+    [layerName: string]: StateFragment[]
+  }
+
+  lastKnown: StateFragment | State
 
   */
 
@@ -80,6 +107,10 @@ class Drone {
     this.layers = {};               // layers of composite states, each layer contains a set of states
     this.compositeStates = [];      // expanded composite states
     this.compositeTransitions = {}; // expanded composite state transitions
+    
+    // handling untestable states
+    this.occlusions = {};           // list of occlusions for each state (while occluded, a state may be untestable)
+    this.lastKnown = {};            // last known/cached states for each layer (used to track state through occlusons)
   }
 
   get baseStates() {
@@ -643,6 +674,86 @@ class Drone {
       }
     }
     return null;
+  }
+
+  // similar to whereAmI, but returns all layers (a composite version of whereAmI)
+  // TODO: currently incapable of handling occlusions (need to address cyclic dependency on isOccluded)
+  // (we probably need a version of isOccluded that uses lastKnown instead of this function)
+  async getStateDetail() {
+    const baseState = await this.whereAmI();
+    const isViable = (layer, state) => {
+      if (state.baseStateList.includes(baseState)) {
+        if (this._isLastKnownOccluded(layer)) {
+          return true; // assume correct state if untestable
+        }
+        if (state.testCriteriaCallback(this.page, this.params)) {
+          return true; // passed test
+        }
+      }
+      return false;
+    }
+
+    const layers = {};
+    for (const layer of this.layers) {
+      const lastKnownStateName = this.lastKnown[layer];
+      if (lastKnownStateName) { // state cache exists
+        const lastKnownState = this.layers[layer][lastKnownStateName];
+        if (lastKnownState.baseStateList.includes(baseState) && lastKnownState.testCriteriaCallback(this.page, this.params)) {
+          layers[layer] = lastKnownState;
+        } else { // cache exists but is wrong
+          let foundState = false;
+          for (const stateName of this.layers[layer]) {
+            const state = this.layers[layer][stateName];
+            if (state.includes(baseState) && state.testCriteriaCallback(this.page, this.params)) {
+              layers[layer] = stateName;
+              foundState = true;
+            }
+          }
+          if (!foundState) {
+            throw new Error(`Unable to determine state for "${layer}" layer and last known state of "${lastKnownStateName}" failed test.`);
+          }
+        }
+      } else { // no state cache, need to figure out the state
+        let foundState = false;
+        for (const stateName of this.layers[layer]) {
+          const state = this.layers[layer][stateName];
+          if (state.includes(baseState) && state.testCriteriaCallback(this.page, this.params)) {
+            layers[layer] = stateName;
+            foundState = true;
+          }
+        }
+        if (!foundState) {
+          throw new Error(`Unable to determine state for "${layer}" layer, no last known state exists.`);
+        }
+      }
+    }
+    return layers;
+  }
+
+  addStateOcclusion(layerName, stateList) {
+    this.occlusions[layerName] = stateList;
+  }
+
+  async _isLastKnownOccluded(layerName) {
+    const lastKnownState = {
+      base: this.currentState,
+      ...this.lastKnown
+    }
+    for (const occlusion of this.occlusions[layerName]) {
+      if (util.isSubstate(occlusion, lastKnownState)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async isOccluded(layerName) {
+    for (const occlusion of this.occlusions[layerName]) {
+      if (util.isSubstate(occlusion, await this.getStateDetail())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // computes shortest path to desired state using Dijkstra's algorithm.

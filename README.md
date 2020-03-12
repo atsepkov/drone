@@ -382,7 +382,7 @@ This function takes an optional state fragment to filter by (eliminating all sta
 
 #### Drone.addState (declarative mode)
 
-    drone.addState(stateName: string, testCriteriaCallback: (page: puppeteer.Page, params: {}) => boolean)
+    drone.addState(stateName: string, testCriteriaCallback: async (page: puppeteer.Page, params: {}) => boolean)
 
 Registers a new state with drone's internal state machine. A state is typically a page, but can be anything you want to uniquely
 identify, such as `logged in` and `logged out` screens. The username of logged in user, on the other hand, is probably not a good
@@ -405,7 +405,7 @@ Returns true if requested layer combination (state) is possible based on defined
     drone.addCompositeState(
       state: { [layer: string] : string },
       baseStateList: string[],
-      testCriteriaCallback: (page: puppeteer.Page, params: {}) => boolean
+      testCriteriaCallback: async (page: puppeteer.Page, params: {}) => boolean
     )
 
 Enhances base states with with a compositing layer, creating new states that represent a combination of multiple events. For example,
@@ -433,7 +433,7 @@ an edge case).
 
     addDefaultCompositeState(
       state: { [layer: string] : string },
-      testCriteriaCallback: (page: puppeteer.Page, params: {}) => boolean
+      testCriteriaCallback: async (page: puppeteer.Page, params: {}) => boolean
     )
 
 Similar to `addCompositeState` except that this method uses all unused base states as its `baseStateList`. It's typically used as a catch-all
@@ -444,12 +444,32 @@ state as well, since they were undefined at the time of the call.
 When definining multiple layers at once, this method will fill each layer with proper defaults (see `test/fsm.test.js` `item exists` section
 for an example).
 
+#### 
+
+A fallback version of `addCompositeState` that assumes this state if no other composite state tests pass for this layer. 
+
+#### Drone.addStateOcclusion (declarative mode)
+
+    drone.addStateOcclusion(
+        layerName: string,
+        stateList: { [layer: string]: string }
+    )
+
+Informs Drone that the state of a certain layer may not be testable/visible while one of other states (layer combinations) is in effect. You
+don't need to add the occlusion unless it affects the test you defined for the state. For example, a pop-up window that renders on top of an
+element whose presence you're testing is not a test occlusion if your test selects the element from the DOM directly. It is an occlusion if
+your test depends on the screenshot or current computed visibility of the element.
+
+Drone will assume last known state for all occluded layers, and test the state again once occlusion is no longer in effect. You can change
+layer state even while it's occluded, Drone will update the "assumed state", but will not be able to verify it until the occlusion is no
+longer in effect. Note that you can also simulate a "default/untestable" state by having layer occlusion depend on its own state.
+
 #### Drone.addStateTransition (declarative mode)
 
     drone.addStateTransition(
       startState: string,
       endState: string,
-      transitionLogicCallback: (page: puppeteer.Page, params: {}) => void,
+      transitionLogicCallback: async (page: puppeteer.Page, params: {}) => void,
       cost: number = 1
     )
 
@@ -466,7 +486,7 @@ will not terminate unless maximum number of retries has been reached.
 
     drone.addDefaultStateTransition(
       endState: string,
-      transitionLogicCallback: (page: puppeteer.Page, params: {}) => void,
+      transitionLogicCallback: async (page: puppeteer.Page, params: {}) => void,
       cost: number = 1
     )
 
@@ -479,7 +499,7 @@ home page is a good default state transition to add.
     drone.addCompositeStateTransition(
       startState: { [layer: string] : string },
       endState: { [layer: string] : string },
-      transitionLogicCallback: (page: puppeteer.Page, params: {}) => void,
+      transitionLogicCallback: async (page: puppeteer.Page, params: {}) => void,
       cost: number = 1
     )
 
@@ -507,11 +527,17 @@ any base state.
 
 #### Drone.whereAmI (declarative mode)
 
-    drone.whereAmI()
+    await drone.whereAmI()
 
 You can call this at any time to ask drone to classify the current state you're in based on state test criteria you specified when
 registering your states. Drone will return `stateName` string that you assigned to this state. If drone can't determine the state,
 it will return the string `<< INVALID STATE >>`. Attempting to transition from this state will invoke deftault state transition.
+
+#### Drone.getStateDetail (declarative mode)
+
+A composite-state version of `Drone.whereAmI()`, returning all states currently set in addition to the base state. Note that for a simple
+state machine without composite states, it will return just the base state as a property of a layer object. For example, a simple state of
+`main page` will be returned as `{ base: 'main page' }`.
 
 #### Drone.getNeighbors (declarative mode)
 
@@ -521,6 +547,13 @@ Given a set of state properties (or a string corresponding to base state), finds
 and returns all neighbor states. If requested set of properties expands to more than one state, raises an ambiguity error. To see if your
 requested state will result in an ambiguity error, call `drone.allStates` with this state as `filter` argument (if returned list contains
 more than 1 element, you will get an ambiguity error, if returned list contains no elements, you will get an invalid state error).
+
+#### Drone.isOccluded (declarative mode)
+
+    await drone.isOccluded(layerName: string)
+
+You can call this at any time to ask drone if the layer is currently occluded given the current state combination (to see current state
+combination, call `drone.whereAmI()`).
 
 #### Drone.findPathToState (declarative mode)
 
@@ -532,14 +565,14 @@ automatically.
 
 #### Drone.traversePath (declarative mode)
 
-    drone.traversePath(path: Transition[], retries: number)
+    await drone.traversePath(path: Transition[], retries: number)
 
 Navigates the passed in path, gives up if any transition fails more than the number of requested retries. Retries are reset after
 a successful transition. Same as with `drone.findPathToState`, you usually won't need this method unless you're troubleshooting.
 
 #### ensureState (declarative mode)
 
-    drone.ensureState(stateName: string, params: {}, actions: async (page: puppeteer.Page) => { ... }, retries: number)
+    await drone.ensureState(stateName: string, params: {}, actions: async (page: puppeteer.Page) => { ... }, retries: number)
 
 Tells drone to find its way to requested state, no matter where drone is now, and execute a set of actions afterwards. Drone will
 use Dijsktra's algorithm to find the shorest path to requested state from its current position. Each transition will be 
@@ -557,7 +590,7 @@ at the home page (google.com) or any other page that has a search bar.
 
 #### testTransitionSideEffects (declarative mode)
 
-    drone.testSideEffects(
+    drone.testTransitionSideEffects(
       startState: { [layer: string] : string },
       endState: { [layer: string] : string }
     )
