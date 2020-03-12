@@ -681,7 +681,7 @@ class Drone {
   // (we probably need a version of isOccluded that uses lastKnown instead of this function)
   async getStateDetail() {
     const baseState = await this.whereAmI();
-    const isViable = (layer, state) => {
+    const isCorrectState = (layer, state) => {
       if (state.baseStateList.includes(baseState)) {
         if (this._isLastKnownOccluded(layer)) {
           return true; // assume correct state if untestable
@@ -698,13 +698,13 @@ class Drone {
       const lastKnownStateName = this.lastKnown[layer];
       if (lastKnownStateName) { // state cache exists
         const lastKnownState = this.layers[layer][lastKnownStateName];
-        if (lastKnownState.baseStateList.includes(baseState) && lastKnownState.testCriteriaCallback(this.page, this.params)) {
+        if (isCorrectState(layer, lastKnownState)) {
           layers[layer] = lastKnownState;
         } else { // cache exists but is wrong
           let foundState = false;
           for (const stateName of this.layers[layer]) {
             const state = this.layers[layer][stateName];
-            if (state.includes(baseState) && state.testCriteriaCallback(this.page, this.params)) {
+            if (isCorrectState(layer, state)) {
               layers[layer] = stateName;
               foundState = true;
             }
@@ -717,7 +717,7 @@ class Drone {
         let foundState = false;
         for (const stateName of this.layers[layer]) {
           const state = this.layers[layer][stateName];
-          if (state.includes(baseState) && state.testCriteriaCallback(this.page, this.params)) {
+          if (isCorrectState(layer, state)) {
             layers[layer] = stateName;
             foundState = true;
           }
