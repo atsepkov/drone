@@ -41,7 +41,7 @@ I also recommend declarative approach for testing, since it allows you to make y
 you to make your tests more thorough.
 
 ### Basic Example
-A quick example webscraping a table from a web page into a json file for use in case:
+A quick example webscraping a table from a web page into a json file:
 ```javascript
 const fs = require('fs');
 const Drone = require('test-drone').Drone;
@@ -64,8 +64,8 @@ const tableSelector = 'table.colwidths-given.docutils';
 })();
 ```
 ### Testing
-We'll show 2 approaches to testing, imperative and declarative. Note that each of these approaches can also be used for webscraping
-(jsut use `Drone` instead of `TestDrone`).
+We'll show 2 approaches to testing, imperative and declarative. Each of these approaches can also be used for webscraping
+(just use `Drone` instead of `TestDrone`).
 
 #### Imperative Approach
 The TestDrone class is meant to be used within a test framework (Jest, Jasmine, and Mocha were tested, but most should work). Note
@@ -306,7 +306,7 @@ every declared state in random order and test that this state works as expected,
 [TestDrone.testAllStates](#testdronetestallstates-declarative-mode) for more info. Note that `drone.ensureState` can also be 
 called from your own tests to ensure consistent starting state for your own tests that will not break if previous UI tests fail:
 
-```
+```javascript
 describe('regular Jest tests', () => {
 
   test('first test', () => {
@@ -342,7 +342,7 @@ For example, a `login` layer must exist for each page, but it's up to you to def
 For example, let's say we have a website with 3 web pages: `main page`, `login screen`, and `user profile`. We would define those states using
 `drone.addState` method (see [Basic States](#basic-states)). Afterwards, we add `logged in` as a compositing state:
 
-```
+```javascript
 drone.addCompositeState({ 'logged in': 'no' }, ['main page', 'login screen'], (page, params) => { ... test criteria ... })
 drone.addCompositeState({ 'logged in': 'yes' }, ['main page', 'user profile'], (page, params) => { ... test criteria ... })
 ```
@@ -356,7 +356,7 @@ that reason, it's often a good idea to define all states first, and add transiti
 Drone also allows composite states to depend on other composite states. For example, the following definition tells drone that the concept of
 gender only exists while logged in:
 
-```
+```javascript
 drone.addCompositeState({
     'logged in': 'yes',
     'gender': 'male'
@@ -378,7 +378,7 @@ each `base` state).
 Now that we defined our composite states, we can add transitions between them. Transitions don't need to define full state. For example, to
 change user gender in user profile, we add the following transition:
 
-```
+```javascript
 drone.addCompositeStateTransition({
     base: 'user profile',
     gender: 'male'
@@ -402,7 +402,7 @@ drone has no way to verify that the change took effect (and will take your word 
 states if you're the kind of person who likes driving with a blindfold on, effectivelly disabling Drone's safety checks. For example, if gender
 is only visible within `user profile`, we can add an occlusion for all other `base` states:
 
-```
+```javascript
 drone.addStateOcclusion('gender', [
     { base: 'main page' },
     { base: 'login screen' },
