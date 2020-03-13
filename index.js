@@ -677,8 +677,6 @@ class Drone {
   }
 
   // similar to whereAmI, but returns all layers (a composite version of whereAmI)
-  // TODO: currently incapable of handling occlusions (need to address cyclic dependency on isOccluded)
-  // (we probably need a version of isOccluded that uses lastKnown instead of this function)
   async getStateDetail() {
     const baseState = await this.whereAmI();
     const isCorrectState = (layer, state) => {

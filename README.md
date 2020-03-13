@@ -218,6 +218,13 @@ simply ask the drone to make sure it's in proper state before running your instr
 desired state from current using Dijkstra's algorithm. This is very similar to how your GPS system works, it's a GPS system 
 for web crawling.
 
+In addition to basic state machine navigation, Drone allows multiple state dimensions that can be used to model very complex
+state interactions, such as the concept of login, map navigation/positioning, and state occlusion (a state that temporarily
+can't be tested because it's blocked by another state). For more information, see [State Compositing](#state-compositing)
+section.
+
+##### Basic States
+
 Taking the Yahoo example above, we can rewrite it using this declarative approach:
 
 ```javascript
@@ -316,6 +323,92 @@ describe('regular Jest tests', () => {
   });
 });
 ```
+
+You can also use this state machine approach for web-crawling, not just testing. To have Drone automatically figure out where
+on the website it currently is, you can call `const webpage = await drone.whereAmI()` at anytime. To navigate to a specific
+webpage/state, use `drone.ensureState` method that you saw above.
+
+##### State Compositing
+
+In previous section you saw a simple state machine that can navigate a typical website. As your website becomes more complex, however,
+it's not always feasible to define separate states for each minor difference. This is where state compositing comes in. Imagine needing
+to track the concept of user login. Having to check whether a user is logged in for each page would double the number of states, and become
+a nightmare for what would otherwise be a simple boolean check (presense of "login" button).
+
+Drone allows you to do exactly that with state compositing. On top of regular `base` states discussed in previous section, you can 
+define an arbitrary number of layers on top. The only requirement is that for each layer you must assign a valid state for each `base` state.
+For example, a `login` layer must exist for each page, but it's up to you to define valid combination of values for it (yes/no/unknown/etc.).
+
+For example, let's say we have a website with 3 web pages: `main page`, `login screen`, and `user profile`. We would define those states using
+`drone.addState` method (see [Basic States](#basic-states)). Afterwards, we add `logged in` as a compositing state:
+
+```
+drone.addCompositeState({ 'logged in': 'no' }, ['main page', 'login screen'], (page, params) => { ... test criteria ... })
+drone.addCompositeState({ 'logged in': 'yes' }, ['main page', 'user profile'], (page, params) => { ... test criteria ... })
+```
+Above defintion tells Drone that `login screen` is only accessible while logged out, while `user profile` is only accessible while logged in,
+`main page` is visible from both states. You can also use `drone.addDefaultCompositeState` method to define a "catch-all" state that
+applies to all `base` states you haven't mentioned in this layer yet. You must make use of every `base` state in every compositing layer
+(i.e. page where the user is neither logged out nor logged in), but you can define [occlusions](#state-occlusion) where the state may not be
+visible/testable. If you attempt to create a transition before the layer is defined for all `base` states, Drone will throw an error. For
+that reason, it's often a good idea to define all states first, and add transitions later.
+
+Drone also allows composite states to depend on other composite states. For example, the following definition tells drone that the concept of
+gender only exists while logged in:
+
+```
+drone.addCompositeState({
+    'logged in': 'yes',
+    'gender': 'male'
+}, ['main page', 'user profile'], (page, params) => { ... test criteria ... })
+drone.addCompositeState({
+    'logged in': 'yes',
+    'gender': 'female'
+}, ['main page', 'user profile'], (page, params) => { ... test criteria ... })
+drone.addCompositeState({
+    'logged in': 'no',
+    'gender': 'N/A'
+}, ['main page', 'login screen'], (page, params) => { ... test criteria ... })
+```
+
+The above definition tells drone that while `logged in`, the user `gender` can only be `male` or `female`, and while logged out, it can only
+be `N/A`. Note thate we still need a value for `gender` layer even while logged out, as mentioned before (a layer must have a valid state for
+each `base` state).
+
+Now that we defined our composite states, we can add transitions between them. Transitions don't need to define full state. For example, to
+change user gender in user profile, we add the following transition:
+
+```
+drone.addCompositeStateTransition({
+    base: 'user profile',
+    gender: 'male'
+}, { gender: 'female' }, (page, params) => { ... logic to change gender ... })
+```
+Note that your start state can define multiple layer states, requiring all of them to be set before a transition can be performed (in our
+case `base` state of `user profile` and `gender` of `male`). Your end state only need to define the layers that change (we can omit `base`
+state because we will remain in `user profile` after this transition).
+
+These state subsets are called state fragments, and are a convenient way for user to define transitions that apply to multiple states at once.
+To get complete state representation of current Drone status, you can call `const state = await drone.getStateDetail()`, it is the composite
+equivalent of `drone.whereAmI`. You can navigate composite states the same way as you navigate basic states via `drone.ensureState`, by 
+passing state fragments to function calls instead of strings.
+
+##### State Occlusion
+
+Some states don't allow you to easily check the current state of a layer, even if that state is internally tracked by the website (i.e. a
+popup blocking an element you're testing). This is called an `occlusion`, and you can define those as well. Drone will assume last-seen state
+while in occlusion and test it when it gets out of occluded zone. You can change the state of a layer even while the layer is occluded, but
+drone has no way to verify that the change took effect (and will take your word for it). Technically, you could define an occlusion for all
+states if you're the kind of person who likes driving with a blindfold on, effectivelly disabling Drone's safety checks. For example, if gender
+is only visible within `user profile`, we can add an occlusion for all other `base` states:
+
+```
+drone.addStateOcclusion('gender', [
+    { base: 'main page' },
+    { base: 'login screen' },
+])
+```
+You can check occlusion at anytime during state machine operation by calling `const occluded = await drone.isOccluded()`.
 
 ## Complete API
 
