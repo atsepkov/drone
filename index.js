@@ -1,11 +1,14 @@
 require('console.table');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth')
 const pixelmatch = require('pixelmatch');
 const PNG = require('pngjs').PNG;
 const fs = require('fs');
 const path = require('path');
 const expect = require('expect.js');
 const util = require('./util');
+
+puppeteer.use(StealthPlugin())
 
 const BAD_STATE = '< INVALID STATE >';
 
