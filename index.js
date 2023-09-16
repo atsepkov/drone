@@ -314,6 +314,30 @@ class Drone {
     this.page.wait = async ms => {
       return new Promise(resolve => setTimeout(resolve, ms));
     };
+    /**
+     * start listening for json response to a request
+     */
+    this.page.onJsonResponse = async (url, response) => {
+      // url can have wildcards
+      const responseUrl = response.url();
+      if (url.includes('*')) {
+        const urlRegex = new RegExp(url.replace(/\*/g, '.*'));
+        if (!urlRegex.test(responseUrl)) {
+          return;
+        }
+      } else if (url !== responseUrl) {
+        return;
+      }
+
+      const responseHeaders = response.headers();
+      const contentType = responseHeaders['content-type'];
+      if (!contentType || !contentType.includes('application/json')) {
+        return;
+      }
+
+      const responseJson = await response.json();
+      this.page.emit('jsonResponse', responseJson);
+    };
     /*
      * scrapes an element on the page into JSON or TEXT
      */
