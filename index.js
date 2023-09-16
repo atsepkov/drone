@@ -246,6 +246,11 @@ class Drone {
     this.config = this.readConfig(this.baseDir);
     await this.page.setViewport(options.viewport || this.config.resolutions[0]);
 
+    if (options.debug) {
+      console.log('Base directory:', this.baseDir)
+      console.log('Config:', this.config)
+    }
+
     // state machine setup
 
     // page convenience methods
