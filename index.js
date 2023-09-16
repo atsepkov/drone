@@ -445,6 +445,8 @@ class Drone {
           }
           resolve(this.config.cache[options.cache]);
         } catch (e) {
+          const errorImage = path.join(baseDir, 'latest-error.png')
+          await this.page.screenshot({path: errorImage})
           reject(e);
         }
       });
