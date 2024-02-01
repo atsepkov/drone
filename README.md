@@ -1,4 +1,6 @@
 # Drone
+This tool was built for [Investomation](https://www.investomation.com) to help us with automated webscraping of content used in our real estate
+analytics.
 
 Tests against different websites, rendering differences highlighted in red:
 
@@ -57,7 +59,7 @@ const tableSelector = 'table.colwidths-given.docutils';
         await page.goto(url);
         const table = await page.waitForSelector(tableSelector);
         return page.scrape(table, 'json');
-    }, { cache: url })); // be nice, cache result
+    }, { cache: url })); // cache the result so we skip the request if we already have the data
 
     fs.writeFileSync(file, JSON.stringify(data));
     await drone.stop();
