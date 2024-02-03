@@ -6,7 +6,9 @@ const PNG = require('pngjs').PNG;
 const fs = require('fs');
 const path = require('path');
 const expect = require('expect.js');
-const util = require('./util');
+const StateMachine = require('./src/state_machine');
+const Page = require('./src/page');
+const util = require('./src/utilities');
 
 puppeteer.use(StealthPlugin())
 
@@ -17,231 +19,20 @@ const BAD_STATE = '< INVALID STATE >';
  */
 class Drone {
 
-  /* TYPE ANNOTATIONS
-  
-  interface StateFragment: {
-    [layerName: string]: string
-  }
-  
-  interface State: {
-    base: string
-    ...StateFragment
-  }
-
-  interface StateDependency {
-    dependency: StateFragment
-    baseStateList: string[]
-  }
-  
-  type TestFunction = async (page: puppeteer.Page, params: { [param: key]: any }) => boolean
-  type TransitionFunction = async (page: puppeteer.Page, params: { [param: key]: any }) => void
-  
-  browser: puppeteer.Browser
-  page: puppeteer.Page
-  defaultTimeout: number
-  baseDir: string
-
-  stateTests: {
-    [stateName: string]: TestFunction
-  }
-
-  states: { [priority: number]: string }
-  
-  neighbors: { [startState: string]: { [endState: string]: {
-    cost: number,
-    logic: (page: puppeteer.Page, params: { [param: key]: any }) => void
-  } } }
-
-  currentState: string | null
-
-  compositeFragments: {
-    [stringifiedName: string]: {
-      stateFields: StateFragment,
-      baseStateList: string[]
-    }
-  }
-
-  fragmentTransitions: { [startState: string]: { [endState: string]: {
-    cost: number,
-    logic: TransitionFunction
-  } } }
-
-  layers: {
-    [layerName: string]: {
-      [stateName: string]: {
-        baseStateList: string[],
-        testCriteriaCallback: TestFunction,
-        dependencies: StateDependency[]
-      }
-    }
-  }
-
-  compositeStates: State[]
-
-  compositeTransitions: { [startState: string]: { [endState: string]: {
-    cost: number,
-    logic: TransitionFunction
-  } } }
-
-  occlusions: {
-    [layerName: string]: StateFragment[]
-  }
-
-  lastKnown: StateFragment | State
-
-  */
-
   constructor() {
-    // genreal properties
+    // general properties
     this.browser = null;
     this.page = null;
     this.defaultTimeout = 30000;
     this.baseDir = __dirname;
-
-    // state machine properties
-    this.stateTests = {};           // possible base states the system is aware of
-    this.states = [];               // states by priority, states defined earlier on have higher test priority
-    this.neighbors = {};            // base state transitions the system is aware of,  used by Dijsktra's algorithm to figure out how to traverse states
-    this.currentState = null;       // used to 'cache' current state to speed up some operations
-
-    // composite states;
-    this.compositeFragments = {};   // tracks added fragments (to track duplicate declarations and base states)
-    this.fragmentTransitions = {};  // transitions for composite layers
-    this.layers = {};               // layers of composite states, each layer contains a set of states
-    this.compositeStates = [];      // expanded composite states
-    this.compositeTransitions = {}; // expanded composite state transitions
-    
-    // handling untestable states
-    this.occlusions = {};           // list of occlusions for each state (while occluded, a state may be untestable)
-    this.lastKnown = {};            // last known/cached states for each layer (used to track state through occlusons)
-  }
-
-  get baseStates() {
-    return this.states.slice();
-  }
-
-  get statesInLayer() {
-    const layers = Object.keys(this.layers);
-    const statesByLayer = {};
-    layers.forEach(layer => {
-      statesByLayer[layer] = Object.keys(this.layers[layer]);
-    });
-    return statesByLayer;
-  }
-
-  // returns a list of expanded states that match passed in filter, if no filter is passed, returns all expanded states.
-  allStates(filter) {
-    this.computeCompositeStates();
-    if (filter) {
-      for (const layer of Object.keys(filter)) {
-        if (layer !== 'base' && !this.layers[layer]) {
-          throw new Error(`Compositing layer "${layer}" doesn't exist.`);
-        }
-      }
-      return util.filterByLayer(this.compositeStates, filter);
-    } else {
-      return this.compositeStates.slice();
-    }
-  }
-
-  get allTransitions() {
-    this.computeCompositeTransitions();
-    return this.compositeTransitions.slice();
-  }
-
-  // given a list of fragments (dependencies), checks that state satisfies at least one of them (by being its superstate)
-  isDependencySatisfied(baseState, stateDependency, state) {
-    const { dependencies, baseStateList } = stateDependency;
-    if (!dependencies || !dependencies.length) {
-      return baseStateList.includes(baseState); // no dependencies
-    }
-
-    for (const dep of dependencies) {
-      if (dep.baseStateList.includes(baseState) && util.isSubstate(dep.dependency, state)) return true;
-    }
-    return false; // haven't found dep where all keys passed
-  }
-
-  // expands base states into composite states using layers
-  computeCompositeStates() {
-    let states = this.states.map(state => {
-      return { base: state }
-    });
-    for (const [layer, layerStates] of Object.entries(this.layers)) { // loop through compositing layers
-      let newStates = [];
-      for (const state of states) { // loop through semi-generated composite states
-        let baseState = state.base;
-        let stateUsed = false;
-        for (const [stateLayer, stateDependency] of Object.entries(layerStates)) { // loop through all defined states for a given layer
-          if (this.isDependencySatisfied(baseState, stateDependency, state)) {
-            stateUsed = true;
-            newStates.push({
-              ...state,
-              [layer]: stateLayer
-            })
-          }
-        }
-        if (!stateUsed) {
-          throw new Error(`No composite state of type "${layer}" exists for base state "${baseState}".`)
-        }
-      }
-      states = newStates;
-    }
-    this.compositeStates = states;
-  }
-
-  computeCompositeTransitions() {
-
-  }
-
-  getNeighbors(startState) {
-    if (typeof startState === 'string') {
-      if (!this.stateTests[startState]) {
-        throw new Error(`"${startState}" is not a valid state.`);
-      }
-      return Object.keys(this.neighbors[startState] || {});
-    } else {
-      const startString = util.stateToString(startState);
-      const nextStates = [];
-      // for (const layer of [ 'base', ...Object.keys(this.layers) ]) { // loop through compositing layers
-      //   if (!(layer in startState)) {
-      //     throw new Error(`Composite state for layer "${layer}" is missing from ${startString}, getNeighbors() requires complete state.`);
-      //   }
-      // }
-
-      if (!this.isValidState(startState)) {
-        throw new Error(`${startString} is not a valid state.`);
-      }
-
-      let found = false;
-      for (const fullState of this.allStates(startState)) {
-        if (found) {
-          throw new Error(`Multiple composite states match ${startString}, define more layers to resolve ambiguity.`)
-        }
-        found = true
-
-        for (const stateString of Object.keys(this.fragmentTransitions)) {
-          if (util.isSubstate(util.stringToState(stateString), fullState)) {
-            // we do no verification for valid end state here, since we assume addCompositeStateTransition safety check already handles it
-            for (const endStateString of Object.keys(this.fragmentTransitions[stateString])) {
-              const endState = util.stringToState(endStateString);
-              nextStates.push({
-                ...startState,
-                ...endState
-              });
-            }
-          }
-        }
-      }
-      return nextStates;
-    }
+    this.fsm = new StateMachine();
   }
 
   // call this to setup and start the drone
   async start(options = {}) {
     // general setup
     this.browser = await puppeteer.launch(options);
-    this.page = await this.browser.newPage();
+    this.page = new Page(await this.browser.newPage());
     this.defaultTimeout = options.defaultTimeout
       ? options.defaultTimeout
       : this.defaultTimeout;
@@ -253,146 +44,6 @@ class Drone {
       console.log('Base directory:', this.baseDir)
       console.log('Config:', this.config)
     }
-
-    // state machine setup
-
-    // page convenience methods
-
-    const escapeXpathString = str => {
-      const splitedQuotes = str.replace(/'/g, `', "'", '`);
-      return `concat('${splitedQuotes}', '')`;
-    };
-
-    /*
-     * specify element to return by exact text within the element (text must be unique,
-     * element must be present, or an error will be thrown).
-     */
-    this.page.elementWithText = async text => {
-      const escapedText = escapeXpathString(text);
-      const linkHandlers = await this.page.$x(
-        `//*[text()[contains(., ${escapedText})]]`,
-      );
-      if (linkHandlers.length === 1) {
-        return linkHandlers[0];
-      } else if (linkHandlers.length > 1) {
-        throw new Error(
-          `Ambiguous click command, ${linkHandlers.length} elements with text "${text}" found.`,
-        );
-      } else {
-        throw new Error(`No elements with text "${text}" found.`);
-      }
-    };
-    /*
-     * return all elements with given text
-     */
-    this.page.allElementsWithText = async text => {
-      const escapedText = escapeXpathString(text);
-      return this.page.$x(`//*[text()[contains(., ${escapedText})]]`);
-    };
-    /*
-     * specify exact coordinates to click within element, fraction between -1 and 1 is
-     * treated like pecentage, numbers outside that range are treated as whole pixel
-     * offsets.
-     */
-    this.page.clickWithinElement = async options => {
-      const boundingBox = await options.element.boundingBox();
-      const xOffset =
-        Math.abs(options.offset.x) < 1
-          ? (boundingBox.width / 2) * options.offset.x
-          : options.offset.x;
-      const yOffset =
-        Math.abs(options.offset.y) < 1
-          ? (boundingBox.height / 2) * options.offset.y
-          : options.offset.y;
-      await this.page.mouse.click(
-        boundingBox.x + boundingBox.width / 2 + xOffset,
-        boundingBox.y + boundingBox.height / 2 + yOffset,
-      );
-    };
-    /*
-     * wait until at least one instance of element with text exists on the page.
-     */
-    this.page.waitForElementWithText = async text => {
-      const escapedText = escapeXpathString(text);
-      return this.page.waitForXPath(`//*[text()[contains(., ${escapedText})]]`);
-    };
-    /*
-     * wait a user-specified number of milliseconds before continuing
-     */
-    this.page.wait = async ms => {
-      return new Promise(resolve => setTimeout(resolve, ms));
-    };
-    /**
-     * start listening for json response to a request
-     */
-    this.page.onJsonResponse = async (url, response) => {
-      // url can have wildcards
-      const responseUrl = response.url();
-      if (url.includes('*')) {
-        const urlRegex = new RegExp(url.replace(/\*/g, '.*'));
-        if (!urlRegex.test(responseUrl)) {
-          return;
-        }
-      } else if (url !== responseUrl) {
-        return;
-      }
-
-      const responseHeaders = response.headers();
-      const contentType = responseHeaders['content-type'];
-      if (!contentType || !contentType.includes('application/json')) {
-        return;
-      }
-
-      const responseJson = await response.json();
-      this.page.emit('jsonResponse', responseJson);
-    };
-    /*
-     * scrapes an element on the page into JSON or TEXT
-     */
-    this.page.scrape = async (element, format) => {
-      if (format === 'json') {
-        if (element._remoteObject.className === 'HTMLTableElement') {
-          return await util.tableToJson(this.page, element);
-        }
-        // content = await this.page.evaluate(element => element.outerHTML, element);
-        return await element.jsonValue();
-      } else {
-        return await this.page.evaluate(
-          element => element.textContent,
-          element,
-        );
-      }
-    };
-    /**
-     * filter elements by combination of CSS, text, and XPath
-     */
-    const convenienceWrap = list => {
-      list.click = async () => {
-        if (list.length === 1) {
-          return list[0].click();
-        } else {
-          throw new Error(
-            `List has ${list.length} elements in it, click requires exactly 1.`,
-          );
-        }
-      };
-      return list;
-    };
-    this.page.filter = async options => {
-      let cssSelected = options.css ? await this.page.$$(options.css) : null;
-      let xpathSelected = options.xpath
-        ? await this.page.$x(options.xpath)
-        : null;
-      let textSelected = options.text
-        ? await this.page.allElementsWithText(options.text)
-        : null;
-      return convenienceWrap(
-        await util.intersection(
-          await util.intersection(cssSelected, xpathSelected),
-          textSelected,
-        ),
-      );
-    };
   }
 
   // call this to shut down the drone
@@ -491,407 +142,61 @@ class Drone {
   // define a state name and test criteria that must be true to determine whether
   // we're already in this state.
   addState(stateName, testCriteriaCallback) {
-    if (stateName === BAD_STATE || stateName in this.stateTests) {
-      throw new Error(`State "${stateName}" already exists, please use unique state names.`);
-    }
-
-    this.states.push(stateName);
-    this.stateTests[stateName] = testCriteriaCallback;
+    this.fsm.addState(stateName, testCriteriaCallback);
   }
 
   // define a composite state (a modifier for base state, i.e. logged in)
   addCompositeState(stateFields, baseStateList, testCriteriaCallback) {
-    const layers = Object.keys(stateFields);
-    const stateString = util.stateToString(stateFields);
-    if (Object.keys(this.compositeFragments).includes(stateString)) {
-      throw new Error(`Composite state "${stateString}" already exists, please use unique state names.`);
-    }
-    this.compositeFragments[stateString] = { stateFields, baseStateList };
-
-    let dependency = {}
-    for (const layer of layers) {
-      if (!this.layers[layer]) {
-        this.layers[layer] = {};
-      }
-      const stateLayer = this.layers[layer];
-      const stateField = stateFields[layer];
-      if (!stateLayer[stateField]) {
-        stateLayer[stateField] = {
-          baseStateList,
-          testCriteriaCallback,
-          dependencies: []
-        };
-      } else {
-        const orig = stateLayer[stateField].baseStateList;
-        stateLayer[stateField].baseStateList = [...orig, ...baseStateList.filter(item => orig.indexOf(item) < 0)]
-      }
-      if (layers.length > 1) {
-        if (Object.keys(dependency).length) {
-          stateLayer[stateField].dependencies.push({ dependency, baseStateList })
-        }
-        // stack dependencies for next layer
-        dependency = {...dependency, [layer]: stateField}
-      }
-      // console.log(layer, stateLayer, Object.values(stateLayer).map(a => a.dependencies))
-    }
+    this.fsm.addCompositeState(stateFields, baseStateList, testCriteriaCallback);
   }
 
   // define default composite state (composite state that applies itself to all base states that do not yet have a composite state at this layer)
   addDefaultCompositeState(stateFields, testCriteriaCallback) {
-    const layers = Object.keys(stateFields);
-    const baseStateList = this.states.filter(state => {
-      for (const layer of layers) {
-        for (let compositeState of Object.values(this.layers[layer])) {
-          if (compositeState.baseStateList.includes(state)) {
-            return false;
-          }
-        }
-      }
-      return true;
-    });
-
-    this.addCompositeState(stateFields, baseStateList, testCriteriaCallback);
-  }
-
-  // returns a list of side-effects (empty if none), that is all additional layer transitions that would be required
-  // for this transition to be possible, this function tests 2 possible problems:
-  // 1. not every superstate of startState has a corresponding endState superstate
-  // 2. a single startState superstate resulting in multiple endState superstates
-  testTransitionSideEffects(startState, endState) {
-    const sideEffects = [];
-    const allStates = this.allStates();
-    const startSuperStates = allStates.filter(state => util.isSubstate(startState, state));
-    const endSuperStates = allStates.filter(state => util.isSubstate(endState, state));
-
-    const startSuperStatesUsed = {};
-    startSuperStates.forEach(state => {
-      const startSuperStateString = util.stateToString(state);
-      const expectedEndState = {
-        ...state,
-        ...endState
-      };
-      const expectedEndStateString = util.stateToString(expectedEndState);
-      for (const endSuperState of endSuperStates) {
-        if (util.stateToString(endSuperState) === expectedEndStateString) {
-          if (startSuperStatesUsed[startSuperStateString]) {
-            sideEffects.push(
-              `Can't traverse ${util.stateToString(startState)} to ${util.stateToString(endState)}. Multiple end states possible.`
-            );
-          } else {
-            startSuperStatesUsed[startSuperStateString] = true;
-          }
-        }
-      }
-      if (!startSuperStatesUsed[startSuperStateString]) {
-        sideEffects.push(
-          `Can't traverse ${util.stateToString(startState)} to ${util.stateToString(endState)}. No end state exists for start state: ${startSuperStateString}.`
-        );
-      }
-    });
-    return sideEffects;
-  }
-
-  // Same as above, but tests if existing transitions create side-effects
-  testStateSideEffects(fragment, baseStates) {
-    const superStates = this.allStates().filter(state => util.isSubstate(startState, state));
-
-  }
-
-  // returns true if all superstates of startState can transition to all superstates of endState, false otherwise
-  canTransitionWithoutSideEffects(startState, endState) {
-    return this.findSideEffects(startState, endState) == null;
+    this.fsm.addDefaultCompositeState(stateFields, testCriteriaCallback);
   }
 
   // define transition from startState to endState, optionally define cost (default = 1)
   // the algorithm will prefer transitions with cheaper cost
   addStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
-
-    if (!this.stateTests[startState]) {
-      throw new Error(`Start state "${startState}" does not exist.`);
-    } else if (!this.stateTests[endState]) {
-      throw new Error(`End state "${endState}" does not exist.`);
-    } else if (startState === endState) {
-      throw new Error(`Trying to add transition from state to itself (${startState}).`);
-    } else if (
-      this.neighbors[startState] &&
-      this.neighbors[startState][endState] &&
-      this.neighbors[startState][endState].cost <= cost
-    ) {
-      const oldCost = this.neighbors[startState][endState].cost;
-      throw new Error(`A cheaper path (cost = ${oldCost}) from "${startState}" to "${endState}" already exists.`);
-    }
-
-    let transition = {
-      cost: cost,
-      logic: transitionLogicCallback
-    };
-    if (!this.neighbors[startState]) {
-      this.neighbors[startState] = {};
-    }
-    this.neighbors[startState][endState] = transition;
-
-    const startString = util.stateToString({ base: startState });
-    const endString = util.stateToString({ base: endState });
-
-    if (!this.fragmentTransitions[startString]) {
-      this.fragmentTransitions[startString] = {};
-    }
-    this.fragmentTransitions[startString][endString] = transition;
+    this.fsm.addStateTransition(startState, endState, transitionLogicCallback, cost);
   }
 
   // define transition that is guaranteed to get us to this endState regardless of where
   // we currently are (i.e. unknown state)
   addDefaultStateTransition(endState, transitionLogicCallback, cost = 1) {
-
-    if (!this.stateTests[endState]) {
-      throw new Error(`End state "${endState}" does not exist.`);
-    }
-
-    let transition = {
-      cost: cost,
-      logic: transitionLogicCallback
-    };
-    if (!this.neighbors[BAD_STATE]) {
-      this.neighbors[BAD_STATE] = {};
-    }
-    this.neighbors[BAD_STATE][endState] = transition;
-  }
-
-  // returns true if this state exists based on combination of state fragments, false otherwise
-  isValidState(state) {
-    let found = false;
-    for (const existingState of this.allStates()) {
-      if (util.isSubstate(state, existingState)) {
-        found = true;
-        break;
-      }
-    }
-    return found;
+    this.fsm.addDefaultStateTransition(endState, transitionLogicCallback, cost);
   }
 
   addCompositeStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
-    const expandedEndStateFragment = { ...startState, ...endState };
-    [startState, expandedEndStateFragment].forEach((requestedState, index) => {
-      if (!this.isValidState(requestedState)) {
-        throw new Error(`No generated state matches composite ${index ? 'end' : 'start'} state of ${util.stateToString(requestedState)}`);
-      }
-    })
-
-    const startString = util.stateToString(startState);
-    const endString = util.stateToString(endState);
-
-    const transition = {
-      cost: cost,
-      logic: transitionLogicCallback
-    }
-    if (!this.fragmentTransitions[startString]) {
-      this.fragmentTransitions[startString] = {};
-    }
-    if (this.fragmentTransitions[startString][endString] && this.fragmentTransitions[startString][endString].cost < cost) {
-      const oldCost = this.fragmentTransitions[startString][endString].cost;
-      throw new Error(`A cheaper path (cost = ${oldCost}) for ${startString} >> ${endString} transition already exists.`);
-    }
-    this.fragmentTransitions[startString][endString] = transition;
+    this.fsm.addCompositeStateTransition(startState, endState, transitionLogicCallback, cost);
   }
 
-  // figures out current state and returns its name to the user, returns null if no states match
+  // figures out current base state and returns its name to the user, returns null if no states match
   async whereAmI() {
-    // if cached state is correct, return that
-    if (this.currentState && await this.stateTests[this.currentState](this.page, this.params)) {
-      return this.currentState;
-    }
-
-    // otherwise loop through all states to find the correct one
-    for (const stateName of this.states) {
-      if (await this.stateTests[stateName](this.page, this.params)) {
-        return stateName;
-      }
-    }
-    return null;
+    return this.fsm.getCurrentState(this.page, this.params);
   }
 
-  // similar to whereAmI, but returns all layers (a composite version of whereAmI)
-  async getStateDetail() {
-    const baseState = await this.whereAmI();
-    const isCorrectState = (layer, state) => {
-      if (state.baseStateList.includes(baseState)) {
-        if (this._isLastKnownOccluded(layer)) {
-          return true; // assume correct state if untestable
-        }
-        if (state.testCriteriaCallback(this.page, this.params)) {
-          return true; // passed test
-        }
-      }
-      return false;
-    }
-
-    const layers = {};
-    for (const layer of this.layers) {
-      const lastKnownStateName = this.lastKnown[layer];
-      if (lastKnownStateName) { // state cache exists
-        const lastKnownState = this.layers[layer][lastKnownStateName];
-        if (isCorrectState(layer, lastKnownState)) {
-          layers[layer] = lastKnownState;
-        } else { // cache exists but is wrong
-          let foundState = false;
-          for (const stateName of this.layers[layer]) {
-            const state = this.layers[layer][stateName];
-            if (isCorrectState(layer, state)) {
-              layers[layer] = stateName;
-              foundState = true;
-            }
-          }
-          if (!foundState) {
-            throw new Error(`Unable to determine state for "${layer}" layer and last known state of "${lastKnownStateName}" failed test.`);
-          }
-        }
-      } else { // no state cache, need to figure out the state
-        let foundState = false;
-        for (const stateName of this.layers[layer]) {
-          const state = this.layers[layer][stateName];
-          if (isCorrectState(layer, state)) {
-            layers[layer] = stateName;
-            foundState = true;
-          }
-        }
-        if (!foundState) {
-          throw new Error(`Unable to determine state for "${layer}" layer, no last known state exists.`);
-        }
-      }
-    }
-    return layers;
-  }
-
-  addStateOcclusion(layerName, stateList) {
-    this.occlusions[layerName] = stateList;
-  }
-
-  async _isLastKnownOccluded(layerName) {
-    const lastKnownState = {
-      base: this.currentState,
-      ...this.lastKnown
-    }
-    for (const occlusion of this.occlusions[layerName]) {
-      if (util.isSubstate(occlusion, lastKnownState)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  async isOccluded(layerName) {
-    for (const occlusion of this.occlusions[layerName]) {
-      if (util.isSubstate(occlusion, await this.getStateDetail())) {
-        return true;
-      }
-    }
-    return false;
+  // same as above, but returns all layers
+  async detailedWhereAmI() {
+    return this.fsm.getCurrentStateDetail(this.page, this.params);
   }
 
   // computes shortest path to desired state using Dijkstra's algorithm.
   async findPathToState(stateName) {
-    if (!this.states.includes(stateName)) {
-      throw new Error(`Unknown state: "${stateName}", you must add this state to Drone first.`)
-    }
-    let startState = await this.whereAmI() || BAD_STATE;
-    if (!this.neighbors[startState]) {
-      startState = BAD_STATE; // legit state, but no path exists out of it
-    }
-    if (startState === stateName) {
-      return []; // already there
-    }
-
-    const unvisited = [...this.states];
-    const vertices = {};
-
-    this.states.forEach((state) => {
-      let distance, prev = null;
-      if (startState === state) {
-        distance = 0;
-      } else {
-        distance = Infinity;
-        prev = null;
-      }
-      vertices[state] = { distance, prev };
-    });
-    // if (startState === BAD_STATE) {
-      unvisited.push(BAD_STATE);
-      vertices[BAD_STATE] = { distance: 0, prev: null };
-    // }
-
-    while (unvisited.length) {
-      // find node with shortest distance
-      let node = null;
-      let minDistance = Infinity;
-      unvisited.forEach((state) => {
-        if (vertices[state].distance < minDistance) {
-          minDistance = vertices[state].distance;
-          node = state;
-        }
-      });
-      unvisited.splice(unvisited.indexOf(node), 1);
-
-      (Object.keys(this.neighbors[node] || {})).forEach(neighbor => {
-        let distance = minDistance + this.neighbors[node][neighbor].cost;
-        if (distance < vertices[neighbor].distance) {
-          vertices[neighbor] = { distance, prev: node }
-        }
-      });
-    }
-
-    let current = stateName;
-    let prev = vertices[stateName].prev;
-    const path = [ [prev, current] ];
-    if (prev === null) {
-      throw Error(`No route exists from "${startState}" (current) to "${stateName}" and no default route exists.`);
-    }
-    while (prev !== startState && prev !== BAD_STATE) {
-      current = vertices[current].prev;
-      prev = vertices[prev].prev;
-      path.unshift([prev, current]);
-    }
-    return path;
+    const currentState = await this.whereAmI();
+    return this.fsm.findPathToState(currentState, stateName);
   }
 
   // traverses a given path
   async traversePath(path, retries) {
-
-    // perform navigation, return true if succeeded, false if failed
-    const attempt = async (start, end) => {
-      await this.neighbors[start][end].logic(this.page, this.params);
-      let newState = await this.whereAmI();
-      if (newState !== end) {
-        if (newState === this.currentState) {
-          console.error(`Route "${start} >> ${end}" did not result in any state transition.`);
-        } else {
-          console.error(`Route "${start} >> ${end}" resulted in transition to wrong state (${newState}).`);
-          this.currentState = newState; // document transition to wrong state
-        }
-        return false;
-      }
-      return true;
-    } 
-
-    // now traverse the path
-    for (const route of path) {
-      let [start, end] = route;
-      let retryAttempts = 0;
-      let success = false;
-      while (!success && retryAttempts < retries) {
-        success = await attempt(start, end);
-        retryAttempts++;
-      }
-      if (!success) {
-        throw new Error(`Failed to traverse "${start} >> ${end}" route after ${retries} attempts.`)
-      }
-      this.currentState = end; // document transition to correct state
-    }
+    return this.fsm.traversePath(path, retries, this.page, this.params);
   }
 
-  // navigates to correct state if we're not already in that state, if navigation
-  // is impossible, throws an error.
-  async ensureState(stateName, params, actions, retries = 3) {
-    const path = await this.findPathToState(stateName, params);
+  // navigates to correct state if we're not already in that state,
+  // then (optionally) performs user-requested actions, and returns the result.
+  // if navigation is impossible, throws an error.
+  async ensureState(stateName, actions, retries = 3) {
+    const path = await this.findPathToState(stateName);
     await this.traversePath(path, retries);
     if (typeof actions === 'function') {
       return await actions(this.page, this.params);
@@ -899,14 +204,14 @@ class Drone {
   }
 
   // similar to above, but is satisfied by more than one state, note that it prefers the state with the shortest path
-  async ensureEitherState(stateList, params, actions, retries = 3) {
+  async ensureEitherState(stateList, actions, retries = 3) {
     let cheapestCost = Infinity, cheapestPath = null, cheapestState;
     for (const state of stateList) {
       try {
-        const path = await this.findPathToState(state, params);
+        const path = await this.findPathToState(state);
         const cost = path.reduce((cost, transition) => {
           const [start, end] = transition;
-          return cost + this.neighbors[start][end].cost
+          return cost + this.fsm.neighbors[start][end].cost
         }, 0);
         if (cost < cheapestCost) {
           cheapestCost = cost;
@@ -929,6 +234,7 @@ class Drone {
     }
   }
 
+
   // returns a shuffled copy of the list
   shuffle(list) {
     list = list.slice(); // make a copy
@@ -942,7 +248,7 @@ class Drone {
   }
 
   // compares two images on disk
-  diffImage(workImage, goldenImagem, diffImage) {
+  diffImage(workImage, goldenImage, diffImage) {
     try {
       const img1 = PNG.sync.read(fs.readFileSync(goldenImage));
       const img2 = PNG.sync.read(fs.readFileSync(workImage));

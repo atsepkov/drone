@@ -461,7 +461,7 @@ For example, if you defined a composite layer named "login" with "logged in" and
 
 #### Drone.allStates (declarative mode)
 
-    drone.addStates(filter?: { [layer: string]: string })
+    drone.allStates(filter?: { [layer: string]: string })
 
 Returns a list of all composite states that drone generates internally. All states in the list are in object format,
 containing name of original state name as value assigned to `base` key and composite values assigned to a key of same name as the

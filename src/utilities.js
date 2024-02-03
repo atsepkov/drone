@@ -1,7 +1,48 @@
 // utilities submodule
 
+const escapeXpathString = str => {
+  const splitQuotes = str.replace(/'/g, `', "'", '`);
+  return `concat('${splitQuotes}', '')`;
+};
+
+// allows to click on a list of elements, if the list has only one element
+const allowListClick = list => {
+  list.click = async () => {
+    if (list.length === 1) {
+      return list[0].click();
+    } else {
+      throw new Error(
+        `List has ${list.length} elements in it, click requires exactly 1.`,
+      );
+    }
+  };
+  return list;
+};
+
+const hasMethod = (obj, name) => {
+  const desc = Object.getOwnPropertyDescriptor (obj, name);
+  return !!desc && typeof desc.value === 'function';
+}
+
+const getInstanceMethodNames = (obj, stop) => {
+  let array = [];
+  let proto = Object.getPrototypeOf (obj);
+  while (proto && proto !== stop) {
+    Object.getOwnPropertyNames (proto)
+      .forEach (name => {
+        if (name !== 'constructor') {
+          if (hasMethod (proto, name)) {
+            array.push (name);
+          }
+        }
+      });
+    proto = Object.getPrototypeOf (proto);
+  }
+  return array;
+}
+
 // equivalent to array.filter() but works with async filtering functions
-exports.filterAsync = async (arr, callback) => {
+const filterAsync = async (arr, callback) => {
   const fail = Symbol();
   return (
     await Promise.all(
@@ -11,12 +52,12 @@ exports.filterAsync = async (arr, callback) => {
 };
 
 // return a list of elements that appear in both other lists
-exports.intersection = async (array1, array2) => {
+const intersection = async (array1, array2, page) => {
   if (!array1) return array2;
   if (!array2) return array1;
   return filterAsync(array1, async e1 => {
     for (const e2 of array2) {
-      let sameElement = await this.page.evaluate((e1, e2) => e1 === e2, e1, e2);
+      let sameElement = await page.evaluate((e1, e2) => e1 === e2, e1, e2);
       if (sameElement) return true;
     }
     return false;
@@ -24,7 +65,7 @@ exports.intersection = async (array1, array2) => {
 };
 
 // convert table to JSON representation
-exports.tableToJson = async (page, table, options) => {
+const tableToJson = async (page, table, options) => {
   // Set options
   const opts = {
     ...{
@@ -51,8 +92,7 @@ exports.tableToJson = async (page, table, options) => {
       };
 
       const arraysToHash = function(keys, values) {
-        var result = {},
-          index = 0;
+        let result = {}, index = 0;
         values.forEach(value => {
           // when ignoring columns, the header option still starts
           // with the first defined column
@@ -86,11 +126,11 @@ exports.tableToJson = async (page, table, options) => {
       };
 
       const scanRows = rows => {
-        var i,
-          j,
-          txt,
-          tmpArray = [],
-          cellIndex = 0;
+        let i,
+            j,
+            txt,
+            tmpArray = [],
+            cellIndex = 0;
         rows.forEach(function(row, rowIndex) {
           if (isVisible(row) || !opts.ignoreHiddenRows) {
             if (!tmpArray[rowIndex]) {
@@ -166,6 +206,10 @@ exports.tableToJson = async (page, table, options) => {
       const construct = function(table, headings) {
         let result = [];
         let tmpArray = scanRows(children(table, 'tbody > tr'));
+        // if headings are empty, use indexes as keys
+        if (headings.length === 0) {
+          headings = Array.from(Array(tmpArray.length).keys()).map(String);
+        }
         tmpArray.forEach(function(row) {
           if (notNull(row)) {
             txt = arraysToHash(headings, row);
@@ -178,7 +222,6 @@ exports.tableToJson = async (page, table, options) => {
       // Run
       // const headings = getHeadings(table);
       const headings = constructHeader(table);
-      console.log('H', JSON.stringify(headings));
       return construct(table, headings);
     },
     table,
@@ -188,19 +231,19 @@ exports.tableToJson = async (page, table, options) => {
 
 // converts composite state to string
 const stateCache = {};
-exports.stateToString = (state) => {
+const stateToString = (state) => {
   const string = JSON.stringify(state, Object.keys(state).sort());
   stateCache[string] = state;
   return string;
 };
 
 // reverses above operation
-exports.stringToState = (string) => {
+const stringToState = (string) => {
   return stateCache[string];
 };
 
 // tests if a composite state fragment is a subset of a composite state
-exports.isSubstate = (subState, superState) => {
+const isSubstate = (subState, superState) => {
   for (const [key, value] of Object.entries(subState)) {
     if (superState[key] !== value) {
       return false;
@@ -209,7 +252,7 @@ exports.isSubstate = (subState, superState) => {
   return true;
 };
 
-exports.filterByLayer = (states, filteredProps) => {
+const filterByLayer = (states, filteredProps) => {
   return states.filter(state => {
     for (const [key, val] of Object.entries(filteredProps)) {
       if (state[key] !== val) {
@@ -218,4 +261,18 @@ exports.filterByLayer = (states, filteredProps) => {
     }
     return true;
   });
+};
+
+module.exports = {
+  escapeXpathString,
+  allowListClick,
+  hasMethod,
+  getInstanceMethodNames,
+  filterAsync,
+  intersection,
+  tableToJson,
+  stateToString,
+  stringToState,
+  isSubstate,
+  filterByLayer,
 };

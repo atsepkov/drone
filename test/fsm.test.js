@@ -1,4 +1,4 @@
-const util = require("../util");
+const util = require("../src/utilities");
 const Drone = require("../index").Drone;
 let drone1 = new Drone(), // drone for simple tests
     drone2 = new Drone(), // drone for composite tests
@@ -20,7 +20,7 @@ describe("Basic States", () => {
       })
     }
     // console.log(expect([]))
-    expect(drone1.baseStates).to.eql(states)
+    expect(drone1.fsm.baseStates).to.eql(states)
   });
 
   test("add duplicate state", () => {
@@ -36,7 +36,7 @@ describe("Basic States", () => {
         mock.state = next;
       })
     })
-    expect(getTransitionMap(drone1.neighbors)).to.eql([
+    expect(getTransitionMap(drone1.fsm.neighbors)).to.eql([
       ['foo', ['bar']],
       ['bar', ['baz']],
       ['baz', ['foo']],
@@ -63,27 +63,27 @@ describe("Basic States", () => {
 
   test("add obsolete transition", () => {
     // transition obsoleted by a cheaper, earlier declared transition
-    expect(drone1.neighbors['foo']['bar'].cost).to.equal(1)
+    expect(drone1.fsm.neighbors['foo']['bar'].cost).to.equal(1)
     expect(() => {
       drone1.addStateTransition('foo', 'bar', () => {}, 2)
     }).to.throwError(/cheaper path/)
-    expect(drone1.neighbors['foo']['bar'].cost).to.equal(1)
+    expect(drone1.fsm.neighbors['foo']['bar'].cost).to.equal(1)
   });
 
   test("add better transition", () => {
     // transition making earlier transition obsolete
-    expect(drone1.neighbors['foo']['bar'].cost).to.equal(1)
+    expect(drone1.fsm.neighbors['foo']['bar'].cost).to.equal(1)
     drone1.addStateTransition('foo', 'bar', () => {
       mock.state = 'bar'
     }, 0.5)
-    expect(drone1.neighbors['foo']['bar'].cost).to.equal(0.5)
+    expect(drone1.fsm.neighbors['foo']['bar'].cost).to.equal(0.5)
   });
 
   test("add default state transitions", () => {
     drone1.addDefaultStateTransition('foo', () => {
       mock.state = 'foo';
     }, 2)
-    expect(getTransitionMap(drone1.neighbors)).to.eql([
+    expect(getTransitionMap(drone1.fsm.neighbors)).to.eql([
       ['foo', ['bar']],
       ['bar', ['baz']],
       ['baz', ['foo']],
@@ -110,14 +110,14 @@ describe("Basic States", () => {
   })
 
   test("getNeighbors", async () => {
-    expect(drone1.getNeighbors('foo')).to.eql(['bar']);
-    expect(drone1.getNeighbors('bar')).to.eql(['baz']);
-    expect(drone1.getNeighbors('baz')).to.eql(['foo']);
+    expect(drone1.fsm.getNeighbors('foo')).to.eql(['bar']);
+    expect(drone1.fsm.getNeighbors('bar')).to.eql(['baz']);
+    expect(drone1.fsm.getNeighbors('baz')).to.eql(['foo']);
   })
 
   test("getNeighbors (non-existant state)", async () => {
     expect(() => {
-      drone1.getNeighbors('food')
+      drone1.fsm.getNeighbors('food')
     }).to.throwError(/not a valid state/)
   })
 
@@ -161,7 +161,7 @@ describe("Basic States", () => {
   })
 
   test("allStates representation without compositing", () => {
-    expect(drone1.allStates()).to.eql([
+    expect(drone1.fsm.allStates()).to.eql([
       { base: 'foo' },
       { base: 'bar' },
       { base: 'baz' },
@@ -185,7 +185,7 @@ describe("Composite States", () => {
     drone2.addCompositeState({ 'gender': 'male' }, ['bar', 'baz', 'qux'], () => {
       return !!mock['gender']
     })
-    expect(drone2.statesInLayer['gender']).to.eql(['male'])
+    expect(drone2.fsm.statesInLayer['gender']).to.eql(['male'])
   })
 
   test("add duplicate composite state", () => {
@@ -196,7 +196,7 @@ describe("Composite States", () => {
 
   test("missing composite state", () => {
     expect(() => {
-      drone2.allStates()
+      drone2.fsm.allStates()
     }).to.throwError(/No composite state/)
   })
 
@@ -204,15 +204,15 @@ describe("Composite States", () => {
     drone2.addDefaultCompositeState({ 'gender': 'unknown' }, () => {
       return false;
     })
-    expect(drone2.layers['gender']['unknown'].baseStateList).to.eql(['foo', 'qux1'])
+    expect(drone2.fsm.layers['gender']['unknown'].baseStateList).to.eql(['foo', 'qux1'])
   })
 
   test("composite state overlap", () => {
     drone2.addCompositeState({ 'gender': 'female' }, ['bar', 'baz', 'qux1'], () => {
       return !mock['gender']
     })
-    expect(drone2.statesInLayer['gender']).to.eql(['male', 'unknown', 'female'])
-    expect(drone2.allStates()).to.eql([
+    expect(drone2.fsm.statesInLayer['gender']).to.eql(['male', 'unknown', 'female'])
+    expect(drone2.fsm.allStates()).to.eql([
       { base: 'foo', gender: 'unknown'  },
       { base: 'bar', gender: 'male'  },
       { base: 'bar', gender: 'female'  },
@@ -225,14 +225,14 @@ describe("Composite States", () => {
   })
 
   test("stacking composite layers (iterative)", () => {
-    drone2.addCompositeState({ 'access': 'us' }, drone2.baseStates, () => {
+    drone2.addCompositeState({ 'access': 'us' }, drone2.fsm.baseStates, () => {
       return mock.access === 'us'
     })
-    drone2.addCompositeState({ 'access': 'international' }, drone2.baseStates, () => {
+    drone2.addCompositeState({ 'access': 'international' }, drone2.fsm.baseStates, () => {
       return mock.access === 'international'
     })
-    expect(Object.keys(drone2.statesInLayer)).to.eql(['gender', 'access'])
-    expect(drone2.allStates()).to.eql([
+    expect(Object.keys(drone2.fsm.statesInLayer)).to.eql(['gender', 'access'])
+    expect(drone2.fsm.allStates()).to.eql([
       { base: 'foo', gender: 'unknown', access: 'us'  },
       { base: 'foo', gender: 'unknown', access: 'international' },
       { base: 'bar', gender: 'male', access: 'us'  },
@@ -262,8 +262,8 @@ describe("Composite States", () => {
     drone2.addCompositeState({ 'logged in': 'no', vip: 'no' }, ['foo', 'bar'], () => {
       return !mock['logged in'] && !mock.vip
     })
-    expect(Object.keys(drone2.statesInLayer)).to.eql(['gender', 'access', 'logged in', 'vip'])
-    expect(drone2.allStates()).to.eql([
+    expect(Object.keys(drone2.fsm.statesInLayer)).to.eql(['gender', 'access', 'logged in', 'vip'])
+    expect(drone2.fsm.allStates()).to.eql([
       { base: 'foo', gender: 'unknown', access: 'us', 'logged in': 'no', vip: 'no' },
       { base: 'foo', gender: 'unknown', access: 'international', 'logged in': 'no', vip: 'no' },
       { base: 'bar', gender: 'male', access: 'us', 'logged in': 'yes', vip: 'no' },
@@ -297,7 +297,7 @@ describe("Composite States", () => {
 
   // NOTE: these tests should really be with getNeighbors, but they become too verbose later
   test("allStates filter", () => {
-    expect(drone2.allStates({
+    expect(drone2.fsm.allStates({
       gender: 'male'
     })).to.eql([
       { base: 'bar', gender: 'male', access: 'us', 'logged in': 'yes', vip: 'no' },
@@ -316,7 +316,7 @@ describe("Composite States", () => {
   })
 
   test("allStates filter (multiple)", () => {
-    expect(drone2.allStates({
+    expect(drone2.fsm.allStates({
       gender: 'female',
       access: 'us',
       vip: 'no'
@@ -329,7 +329,7 @@ describe("Composite States", () => {
 
   test("allStates filter (bad layer)", () => {
     expect(() => {
-      drone2.allStates({
+      drone2.fsm.allStates({
         gender: 'female',
         access: 'us',
         vip: 'no',
@@ -355,8 +355,8 @@ describe("Composite States", () => {
       return !mock['item exists'] && !mock['item visible']
     })
 
-    expect(drone2.layers['item exists']['no'].baseStateList).to.eql(['foo', 'qux1'])
-    expect(drone2.layers['item visible']['no'].baseStateList).to.eql(['bar' , 'baz', 'foo', 'qux1'])
+    expect(drone2.fsm.layers['item exists']['no'].baseStateList).to.eql(['foo', 'qux1'])
+    expect(drone2.fsm.layers['item visible']['no'].baseStateList).to.eql(['bar' , 'baz', 'foo', 'qux1'])
   });
 
   test("add composite state transitions", () => {
@@ -389,7 +389,7 @@ describe("Composite States", () => {
     drone2.addCompositeStateTransition(start5, end5, () => {
       mock.itemVisible = 'no'
     })
-    expect(getTransitionMap(drone2.fragmentTransitions)).to.eql([
+    expect(getTransitionMap(drone2.fsm.fragmentTransitions)).to.eql([
       [util.stateToString({ base: 'bar' }), [ util.stateToString({ base: 'baz' }) ]],
       [util.stateToString(start1), [util.stateToString(end1)]],
       [util.stateToString(start2), [util.stateToString(end2)]],
@@ -405,11 +405,11 @@ describe("Composite States", () => {
     const end = { vip: 'yes' };
     const startString = util.stateToString(start);
     const endString = util.stateToString(end);
-    expect(drone2.fragmentTransitions[startString][endString].cost).to.equal(1)
+    expect(drone2.fsm.fragmentTransitions[startString][endString].cost).to.equal(1)
     expect(() => {
       drone2.addCompositeStateTransition(start, end, () => {}, 2)
     }).to.throwError(/cheaper path/)
-    expect(drone2.fragmentTransitions[startString][endString].cost).to.equal(1)
+    expect(drone2.fsm.fragmentTransitions[startString][endString].cost).to.equal(1)
   })
 
   test("add better composite state transition", () => {
@@ -418,11 +418,11 @@ describe("Composite States", () => {
     const end = { vip: 'yes' };
     const startString = util.stateToString(start);
     const endString = util.stateToString(end);
-    expect(drone2.fragmentTransitions[startString][endString].cost).to.equal(1)
+    expect(drone2.fsm.fragmentTransitions[startString][endString].cost).to.equal(1)
     drone2.addCompositeStateTransition(start, end, () => {
       mock.vip = 'yes'
     }, 0.5)
-    expect(drone2.fragmentTransitions[startString][endString].cost).to.equal(0.5)
+    expect(drone2.fsm.fragmentTransitions[startString][endString].cost).to.equal(0.5)
   });
 
   test("composite state transition with bad start state layer", () => {
@@ -474,18 +474,18 @@ describe("Composite States", () => {
   })
 
   test("isValidState (yes)", () => {
-    expect(drone2.isValidState({
+    expect(drone2.fsm.isValidState({
       base: 'qux',
       gender: 'male',
     })).to.be.ok();
   })
 
   test("isValidState (no)", () => {
-    expect(drone2.isValidState({
+    expect(drone2.fsm.isValidState({
       base: 'qux',
       gender: 'female',
     })).to.not.be.ok();
-    expect(drone2.isValidState({
+    expect(drone2.fsm.isValidState({
       base: 'qux',
       vip: 'no',
     })).to.not.be.ok();
@@ -493,14 +493,14 @@ describe("Composite States", () => {
 
   test("getNeighbors (ambiguity)", () => {
     expect(() => {
-      drone2.getNeighbors({ base: 'baz', gender: 'female' })
+      drone2.fsm.getNeighbors({ base: 'baz', gender: 'female' })
     }).to.throwError(/define more layers to resolve ambiguity/)
   })
 
   test("getNeighbors (invalid state)", () => {
     // baz is inaccessible without login
     expect(() => {
-      drone2.getNeighbors({
+      drone2.fsm.getNeighbors({
         base: 'baz',
         access: 'us',
         gender: 'female',
@@ -513,7 +513,7 @@ describe("Composite States", () => {
   })
 
   test("getNeighbors", () => {
-    expect(drone2.getNeighbors(
+    expect(drone2.fsm.getNeighbors(
 
       {
         base: 'baz',
