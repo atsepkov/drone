@@ -26,6 +26,57 @@ class Drone {
     this.fsm = new StateMachine();
   }
 
+  // build the state machine in a single definition instead of having to call the methods in the right order
+  stateMachine(definition) {
+
+    // require all states to have test logic and transitions
+    for (let stateName in definition) {
+      if (!definition[stateName].test || typeof definition[stateName].test !== 'function') {
+        throw new Error(`State "${stateName}" doesn't define a test function.`);
+      }
+      if (!definition[stateName].transitions || !Object.keys(definition[stateName].transitions).length) {
+        throw new Error(`State "${stateName}" doesn't define any transitions.`);
+      }
+    }
+
+    // add states
+    for (let stateName in definition) {
+      // if params are present, then create a meta-state, otherwise create a basic state
+      if (definition[stateName].params) {
+        this.addMetaState(stateName, definition[stateName].params, definition[stateName].test);
+      } else {
+        this.addState(stateName, definition[stateName].test);
+      }
+    }
+
+    // add transitions
+    let defaultTransitionPresent = false;
+    for (let stateName in definition) {
+      for (let fromState in definition[stateName].transitions) {
+        let cost = 1
+        let logic
+        if (typeof definition[stateName].transitions[fromState] === 'function') {
+          logic = definition[stateName].transitions[fromState]
+        } else {
+          logic = definition[stateName].transitions[fromState].logic
+          cost = definition[stateName].transitions[fromState].cost || 1
+        }
+        if (!test) {
+          throw new Error(`Transition from "${fromState}" to "${stateName}" doesn't define the logic for performing the transition.`);
+        }
+        if (fromState === '*') {
+          defaultTransitionPresent = true;
+          this.addDefaultStateTransition(stateName, test, cost);
+        } else {
+          this.addStateTransition(fromState, stateName, test, cost);
+        }
+      }
+    }
+    if (!defaultTransitionPresent) {
+      throw new Error('At least one default (*) transition is required to recover from bad states.');
+    }
+  }
+
   // call this to setup and start the drone
   async start(options = {}) {
     // general setup
@@ -149,6 +200,11 @@ class Drone {
     this.fsm.addState(stateName, testCriteriaCallback);
   }
 
+  // define a meta-state that has parameters (i.e. logged in, but with different user)
+  addMetaState(stateName, addMetaState, testCriteriaCallback) {
+    this.fsm.addMetaState(stateName, params, testCriteriaCallback);
+  }
+
   // define a composite state (a modifier for base state, i.e. logged in)
   addCompositeState(stateFields, baseStateList, testCriteriaCallback) {
     this.fsm.addCompositeState(stateFields, baseStateList, testCriteriaCallback);
@@ -165,6 +221,11 @@ class Drone {
     this.fsm.addStateTransition(startState, endState, transitionLogicCallback, cost);
   }
 
+  // define meta-state transition
+  addMetaStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
+    this.fsm.addMetaStateTransition(startState, endState, transitionLogicCallback, cost);
+  }
+
   // define transition that is guaranteed to get us to this endState regardless of where
   // we currently are (i.e. unknown state)
   addDefaultStateTransition(endState, transitionLogicCallback, cost = 1) {
@@ -173,6 +234,11 @@ class Drone {
 
   addCompositeStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
     this.fsm.addCompositeStateTransition(startState, endState, transitionLogicCallback, cost);
+  }
+
+  // perform this logic whenever we enter this state
+  onState(stateName, logicCallback) {
+    this.fsm.onState(stateName, logicCallback);
   }
 
   // figures out current base state and returns its name to the user, returns null if no states match

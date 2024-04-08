@@ -87,6 +87,7 @@ class StateMachine {
         this.states = [];               // states by priority, states defined earlier have a higher test priority
         this.neighbors = {};            // base state transitions the system is aware of,  used by Dijkstra's algorithm to figure out how to traverse states
         this._currentState = null;      // used to 'cache' current state to speed up some operations
+        this.stateTriggers = {};        // triggers that are run when a state is entered
 
         // meta states
         this.metaStates = {};           // meta states are states that are not yet materialized (this is stateTests for meta states)
@@ -117,7 +118,7 @@ class StateMachine {
         const layers = Object.keys(this.layers);
         const statesByLayer = {};
         layers.forEach(layer => {
-          statesByLayer[layer] = Object.keys(this.layers[layer]);
+            statesByLayer[layer] = Object.keys(this.layers[layer]);
         });
         return statesByLayer;
     }
@@ -126,14 +127,14 @@ class StateMachine {
     allStates(filter) {
         this.computeCompositeStates();
         if (filter) {
-        for (const layer of Object.keys(filter)) {
-            if (layer !== 'base' && !this.layers[layer]) {
-            throw new Error(`Compositing layer "${layer}" doesn't exist.`);
+            for (const layer of Object.keys(filter)) {
+                if (layer !== 'base' && !this.layers[layer]) {
+                    throw new Error(`Compositing layer "${layer}" doesn't exist.`);
+                }
             }
-        }
-        return util.filterByLayer(this.compositeStates, filter);
+            return util.filterByLayer(this.compositeStates, filter);
         } else {
-        return this.compositeStates.slice();
+            return this.compositeStates.slice();
         }
     }
 
@@ -146,11 +147,11 @@ class StateMachine {
     isDependencySatisfied(baseState, stateDependency, state) {
         const { dependencies, baseStateList } = stateDependency;
         if (!dependencies || !dependencies.length) {
-        return baseStateList.includes(baseState); // no dependencies
+            return baseStateList.includes(baseState); // no dependencies
         }
 
         for (const dep of dependencies) {
-        if (dep.baseStateList.includes(baseState) && util.isSubstate(dep.dependency, state)) return true;
+            if (dep.baseStateList.includes(baseState) && util.isSubstate(dep.dependency, state)) return true;
         }
         return false; // haven't found dep where all keys passed
     }
@@ -176,24 +177,24 @@ class StateMachine {
             return { base: state }
         });
         for (const [layer, layerStates] of Object.entries(this.layers)) { // loop through compositing layers
-        let newStates = [];
-        for (const state of states) { // loop through semi-generated composite states
-            let baseState = state.base;
-            let stateUsed = false;
-            for (const [stateLayer, stateDependency] of Object.entries(layerStates)) { // loop through all defined states for a given layer
-            if (this.isDependencySatisfied(baseState, stateDependency, state)) {
-                stateUsed = true;
-                newStates.push({
-                ...state,
-                [layer]: stateLayer
-                })
+            let newStates = [];
+            for (const state of states) { // loop through semi-generated composite states
+                let baseState = state.base;
+                let stateUsed = false;
+                for (const [stateLayer, stateDependency] of Object.entries(layerStates)) { // loop through all defined states for a given layer
+                    if (this.isDependencySatisfied(baseState, stateDependency, state)) {
+                        stateUsed = true;
+                        newStates.push({
+                        ...state,
+                        [layer]: stateLayer
+                        })
+                    }
+                }
+                if (!stateUsed) {
+                    throw new Error(`No composite state of type "${layer}" exists for base state "${baseState}".`)
+                }
             }
-            }
-            if (!stateUsed) {
-            throw new Error(`No composite state of type "${layer}" exists for base state "${baseState}".`)
-            }
-        }
-        states = newStates;
+            states = newStates;
         }
         this.compositeStates = states;
     }
@@ -205,44 +206,44 @@ class StateMachine {
     // get neighbors of a state, neighbors are states we can traverse to (from startState), previous states are not necessarily neighbors
     getNeighbors(startState) {
         if (typeof startState === 'string') {
-        if (!this.stateTests[startState]) {
-            throw new Error(`"${startState}" is not a valid state.`);
-        }
-        return Object.keys(this.neighbors[startState] || {});
-        } else {
-        const startString = util.stateToString(startState);
-        const nextStates = [];
-        // for (const layer of [ 'base', ...Object.keys(this.layers) ]) { // loop through compositing layers
-        //   if (!(layer in startState)) {
-        //     throw new Error(`Composite state for layer "${layer}" is missing from ${startString}, getNeighbors() requires complete state.`);
-        //   }
-        // }
-
-        if (!this.isValidState(startState)) {
-            throw new Error(`${startString} is not a valid state.`);
-        }
-
-        let found = false;
-        for (const fullState of this.allStates(startState)) {
-            if (found) {
-            throw new Error(`Multiple composite states match ${startString}, define more layers to resolve ambiguity.`)
+            if (!this.stateTests[startState]) {
+                throw new Error(`"${startState}" is not a valid state.`);
             }
-            found = true
+            return Object.keys(this.neighbors[startState] || {});
+        } else {
+            const startString = util.stateToString(startState);
+            const nextStates = [];
+            // for (const layer of [ 'base', ...Object.keys(this.layers) ]) { // loop through compositing layers
+            //   if (!(layer in startState)) {
+            //     throw new Error(`Composite state for layer "${layer}" is missing from ${startString}, getNeighbors() requires complete state.`);
+            //   }
+            // }
 
-            for (const stateString of Object.keys(this.fragmentTransitions)) {
-            if (util.isSubstate(util.stringToState(stateString), fullState)) {
-                // we do no verification for valid end state here, since we assume addCompositeStateTransition safety check already handles it
-                for (const endStateString of Object.keys(this.fragmentTransitions[stateString])) {
-                const endState = util.stringToState(endStateString);
-                nextStates.push({
-                    ...startState,
-                    ...endState
-                });
+            if (!this.isValidState(startState)) {
+                throw new Error(`${startString} is not a valid state.`);
+            }
+
+            let found = false;
+            for (const fullState of this.allStates(startState)) {
+                if (found) {
+                    throw new Error(`Multiple composite states match ${startString}, define more layers to resolve ambiguity.`)
+                }
+                found = true
+
+                for (const stateString of Object.keys(this.fragmentTransitions)) {
+                    if (util.isSubstate(util.stringToState(stateString), fullState)) {
+                        // we do no verification for valid end state here, since we assume addCompositeStateTransition safety check already handles it
+                        for (const endStateString of Object.keys(this.fragmentTransitions[stateString])) {
+                        const endState = util.stringToState(endStateString);
+                        nextStates.push({
+                            ...startState,
+                            ...endState
+                        });
+                        }
+                    }
                 }
             }
-            }
-        }
-        return nextStates;
+            return nextStates;
         }
     }
 
@@ -250,10 +251,10 @@ class StateMachine {
     isValidState(state) {
         let found = false;
         for (const existingState of this.allStates()) {
-        if (util.isSubstate(state, existingState)) {
-            found = true;
-            break;
-        }
+            if (util.isSubstate(state, existingState)) {
+                found = true;
+                break;
+            }
         }
         return found;
     }
@@ -278,50 +279,50 @@ class StateMachine {
     async getCurrentStateDetail(page, params) {
         const baseState = await this.getCurrentState(page, params);
         const isCorrectState = (layer, state) => {
-        if (state.baseStateList.includes(baseState)) {
-            if (this._isLastKnownOccluded(layer)) {
-            return true; // assume correct state if untestable
+            if (state.baseStateList.includes(baseState)) {
+                if (this._isLastKnownOccluded(layer)) {
+                    return true; // assume correct state if untestable
+                }
+                if (state.testCriteriaCallback(page, params)) {
+                    return true; // passed test
+                }
             }
-            if (state.testCriteriaCallback(page, params)) {
-            return true; // passed test
-            }
-        }
-        return false;
+            return false;
         }
 
         const layers = {};
         for (const layer of this.layers) {
-        const lastKnownStateName = this.lastKnown[layer];
-        if (lastKnownStateName) { // state cache exists
-            const lastKnownState = this.layers[layer][lastKnownStateName];
-            if (isCorrectState(layer, lastKnownState)) {
-            layers[layer] = lastKnownState;
-            } else { // cache exists but is wrong
-            let foundState = false;
-            for (const stateName of this.layers[layer]) {
-                const state = this.layers[layer][stateName];
-                if (isCorrectState(layer, state)) {
-                layers[layer] = stateName;
-                foundState = true;
+            const lastKnownStateName = this.lastKnown[layer];
+            if (lastKnownStateName) { // state cache exists
+                const lastKnownState = this.layers[layer][lastKnownStateName];
+                if (isCorrectState(layer, lastKnownState)) {
+                    layers[layer] = lastKnownState;
+                } else { // cache exists but is wrong
+                    let foundState = false;
+                    for (const stateName of this.layers[layer]) {
+                        const state = this.layers[layer][stateName];
+                        if (isCorrectState(layer, state)) {
+                            layers[layer] = stateName;
+                            foundState = true;
+                        }
+                    }
+                    if (!foundState) {
+                        throw new Error(`Unable to determine state for "${layer}" layer and last known state of "${lastKnownStateName}" failed test.`);
+                    }
+                }
+            } else { // no state cache, need to figure out the state
+                let foundState = false;
+                for (const stateName of this.layers[layer]) {
+                    const state = this.layers[layer][stateName];
+                    if (isCorrectState(layer, state)) {
+                        layers[layer] = stateName;
+                        foundState = true;
+                    }
+                }
+                if (!foundState) {
+                    throw new Error(`Unable to determine state for "${layer}" layer, no last known state exists.`);
                 }
             }
-            if (!foundState) {
-                throw new Error(`Unable to determine state for "${layer}" layer and last known state of "${lastKnownStateName}" failed test.`);
-            }
-            }
-        } else { // no state cache, need to figure out the state
-            let foundState = false;
-            for (const stateName of this.layers[layer]) {
-            const state = this.layers[layer][stateName];
-            if (isCorrectState(layer, state)) {
-                layers[layer] = stateName;
-                foundState = true;
-            }
-            }
-            if (!foundState) {
-            throw new Error(`Unable to determine state for "${layer}" layer, no last known state exists.`);
-            }
-        }
         }
         return layers;
     }
@@ -342,7 +343,7 @@ class StateMachine {
     async isOccluded(layerName) {
         for (const occlusion of this.occlusions[layerName]) {
             if (util.isSubstate(occlusion, await this.getCurrentStateDetail())) {
-            return true;
+                return true;
             }
         }
         return false;
@@ -703,6 +704,10 @@ class StateMachine {
         this.occlusions[layerName] = stateList;
     }
 
+    onState(stateName, logicCallback) {
+        this.stateTriggers[stateName] = logicCallback;
+    }
+
 
     /* STATE MACHINE NAVIGATION */
 
@@ -719,6 +724,9 @@ class StateMachine {
                 } else {
                     console.error(`Route "${start} >> ${end}" resulted in transition to wrong state (${newState}).`);
                     this._currentState = newState; // document transition to wrong state
+                    if (this.stateTriggers[newState]) {
+                        await this.stateTriggers[newState](page, params);
+                    }
                 }
                 return false;
             }
@@ -738,6 +746,9 @@ class StateMachine {
                 throw new Error(`Failed to traverse "${start} >> ${end}" route after ${retries} attempts.`)
             }
             this._currentState = end; // document transition to correct state
+            if (this.stateTriggers[end]) {
+                await this.stateTriggers[end](page, params);
+            }
         }
     }
 }
