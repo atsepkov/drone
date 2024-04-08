@@ -88,6 +88,10 @@ class StateMachine {
         this.neighbors = {};            // base state transitions the system is aware of,  used by Dijkstra's algorithm to figure out how to traverse states
         this._currentState = null;      // used to 'cache' current state to speed up some operations
 
+        // meta states
+        this.metaStates = {};           // meta states are states that are not yet materialized (this is stateTests for meta states)
+        this.metaNeighbors = {};        // meta state transitions
+
         // composite states;
         this.compositeFragments = {};   // tracks added fragments (to track duplicate declarations and base states)
         this.fragmentTransitions = {};  // transitions for composite layers
@@ -151,10 +155,25 @@ class StateMachine {
         return false; // haven't found dep where all keys passed
     }
 
+    // meta-states define params needed to compile them into regular states, this function checks if these
+    // params are actually being used within the function body
+    // HACK: we rely on regex to detect params for now rather than mocking the page object and running the function
+    _getUnusedParams(func, paramNames) {
+        const unusedParams = [];
+        const funcString = func.toString();
+        for (const paramName of paramNames) {
+            const paramRegex = new RegExp(`\\b${paramName}\\b`);
+            if (!paramRegex.test(funcString)) {
+                unusedParams.push(paramName);
+            }
+        }
+        return unusedParams;
+    }
+
     // expands base states into composite states using layers
     computeCompositeStates() {
         let states = this.states.map(state => {
-        return { base: state }
+            return { base: state }
         });
         for (const [layer, layerStates] of Object.entries(this.layers)) { // loop through compositing layers
         let newStates = [];
@@ -330,7 +349,7 @@ class StateMachine {
     }
 
     // computes shortest path to desired state using Dijkstra's algorithm.
-    async findPathToState(startState, endState) {
+    async findPathToState(startState, startParams, endState, endParams) {
         if (!this.states.includes(endState)) {
             throw new Error(`Unknown state: "${endState}", you must add this state to Drone first.`)
         }
@@ -347,10 +366,10 @@ class StateMachine {
         this.states.forEach((state) => {
             let distance, prev = null;
             if (startState === state) {
-            distance = 0;
+                distance = 0;
             } else {
-            distance = Infinity;
-            prev = null;
+                distance = Infinity;
+                prev = null;
             }
             vertices[state] = { distance, prev };
         });
@@ -364,18 +383,18 @@ class StateMachine {
             let node = null;
             let minDistance = Infinity;
             unvisited.forEach((state) => {
-            if (vertices[state].distance < minDistance) {
-                minDistance = vertices[state].distance;
-                node = state;
-            }
+                if (vertices[state].distance < minDistance) {
+                    minDistance = vertices[state].distance;
+                    node = state;
+                }
             });
             unvisited.splice(unvisited.indexOf(node), 1);
 
             (Object.keys(this.neighbors[node] || {})).forEach(neighbor => {
-            let distance = minDistance + this.neighbors[node][neighbor].cost;
-            if (distance < vertices[neighbor].distance) {
-                vertices[neighbor] = { distance, prev: node }
-            }
+                let distance = minDistance + this.neighbors[node][neighbor].cost;
+                if (distance < vertices[neighbor].distance) {
+                    vertices[neighbor] = { distance, prev: node }
+                }
             });
         }
 
@@ -449,11 +468,31 @@ class StateMachine {
     // we're already in this state.
     addState(stateName, testCriteriaCallback) {
         if (stateName === BAD_STATE || stateName in this.stateTests) {
-        throw new Error(`State "${stateName}" already exists, please use unique state names.`);
+            throw new Error(`State "${stateName}" already exists, please use unique state names.`);
         }
 
         this.states.push(stateName);
         this.stateTests[stateName] = testCriteriaCallback;
+    }
+
+    // Similar to regular state, but a meta-state also takes additional parameters that are not yet available at build time,
+    // specifying these parameters during navigation will result in meta-state getting compiled into a regular state. A single
+    // meta state can be compiled into multiple states, if different parameters are passed for the same final state.
+    addMetaState(stateName, params, testCriteriaCallback) {
+        if (stateName === BAD_STATE || stateName in this.stateTests) {
+            throw new Error(`State "${stateName}" already exists, please use unique state names.`);
+        } else if (stateName in this.metaStates) {
+            throw new Error(`Meta-state "${stateName}" already exists, please use unique meta-state names.`);
+        }
+
+        if (!params || Object.keys(params).length === 0) {
+            throw new Error(`Meta-state "${stateName}" must use at least one parameter.`);
+        }
+
+        this.metaStates[stateName] = {
+            params,                         // params required to compile this meta-state into a regular state
+            stateTest: testCriteriaCallback // test we run to determine whether we're in this state, params will be passed to it
+        };
     }
 
     // define a composite state (a modifier for base state, i.e. logged in)
@@ -514,27 +553,33 @@ class StateMachine {
     // the algorithm will prefer transitions with cheaper cost
     addStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
 
-        if (!this.stateTests[startState]) {
-        throw new Error(`Start state "${startState}" does not exist.`);
-        } else if (!this.stateTests[endState]) {
-        throw new Error(`End state "${endState}" does not exist.`);
-        } else if (startState === endState) {
-        throw new Error(`Trying to add transition from state to itself (${startState}).`);
-        } else if (
-        this.neighbors[startState] &&
-        this.neighbors[startState][endState] &&
-        this.neighbors[startState][endState].cost <= cost
-        ) {
-        const oldCost = this.neighbors[startState][endState].cost;
-        throw new Error(`A cheaper path (cost = ${oldCost}) from "${startState}" to "${endState}" already exists.`);
+        // do not allow transition to self unless this is a meta-state
+        if (startState === endState) {
+            throw new Error(`Transition from state to itself is not allowed (${startState}).`);
         }
 
-        let transition = {
-        cost: cost,
-        logic: transitionLogicCallback
+        // check that both states exist and our transition is cheaper than existing one
+        if (!this.stateTests[startState]) {
+            throw new Error(`Start state "${startState}" does not exist.`);
+        } else if (!this.stateTests[endState]) {
+            throw new Error(`End state "${endState}" does not exist.`);
+        } else if (startState === endState) {
+            throw new Error(`Trying to add transition from state to itself (${startState}).`);
+        } else if (
+            this.neighbors[startState] &&
+            this.neighbors[startState][endState] &&
+            this.neighbors[startState][endState].cost <= cost
+        ) {
+            const oldCost = this.neighbors[startState][endState].cost;
+            throw new Error(`A cheaper path (cost = ${oldCost}) from "${startState}" to "${endState}" already exists.`);
+        }
+
+        const transition = {
+            cost: cost,
+            logic: transitionLogicCallback
         };
         if (!this.neighbors[startState]) {
-        this.neighbors[startState] = {};
+            this.neighbors[startState] = {};
         }
         this.neighbors[startState][endState] = transition;
 
@@ -542,9 +587,73 @@ class StateMachine {
         const endString = util.stateToString({ base: endState });
 
         if (!this.fragmentTransitions[startString]) {
-        this.fragmentTransitions[startString] = {};
+            this.fragmentTransitions[startString] = {};
         }
         this.fragmentTransitions[startString][endString] = transition;
+    }
+
+    // same as above, but for meta-states. Meta transitions require that at least one of startState or endState is a meta-state.
+    // If endState is a meta-state, params are required. Transition will share the same params as the endState.
+    // NOTE: meta-states can define transitions to themselves, the only requirement is that params are different. Also,
+    // meta-states can transition back to regular state by resetting the parameters being tracked.
+    addMetaStateTransition(startState, endState, transitionLogicCallback, cost = 1) {
+
+        // make sure at least one of the states is a meta-state
+        if (!this.metaStates[startState] && !this.metaStates[endState]) {
+            throw new Error(`At least one of the states "${startState}" and "${endState}" must be a meta-state.`);
+        }
+
+        // check that both states exist and our transition is cheaper than existing one
+        if (!this.metaStates[startState] && !this.stateTests[startState]) {
+            throw new Error(`Start state "${startState}" does not exist.`);
+        } else if (!this.metaStates[endState] && !this.stateTests[endState]) {
+            throw new Error(`End state "${endState}" does not exist.`);
+        } else if (!this.metaStates[startState] && !this.metaStates[endState]) {
+            throw new Error(`At least one of the states "${startState}" and "${endState}" must be a meta-state.`);
+        } else if (
+            this.metaNeighbors[startState] &&
+            this.metaNeighbors[startState][endState] &&
+            this.metaNeighbors[startState][endState].cost <= cost
+        ) {
+            const oldCost = this.metaNeighbors[startState][endState].cost;
+            throw new Error(`A cheaper path (cost = ${oldCost}) from "${startState}" to "${endState}" already exists.`);
+        }
+
+        // check that params are being used in the transition logic
+        const startParams = this.metaStates[startState] ? this.metaStates[startState].params : {};
+        const endParams = this.metaStates[endState] ? this.metaStates[endState].params : {};
+        // the transition should set all params present in endState but missing in startState
+        const missingParams = Object.keys(endParams).filter(param => !startParams[param]);
+        const unusedParams = this._getUnusedParams(transitionLogicCallback, missingParams);
+        if (unusedParams.length) {
+            throw new Error(`Transition from "${startState}" to "${endState}" does not use all required params: ${unusedParams.join(', ')}.`);
+        }
+
+        // if this is a transition to itself, we need to make sure that at least one param is updated
+        if (startState === endState) {
+            const paramNames = Object.keys(startParams);
+            const unusedParams = this._getUnusedParams(transitionLogicCallback, paramNames);
+            if (unusedParams.length === paramNames.length) {
+                throw new Error(`Transition from "${startState}" to itself must update at least one param.`);
+            }
+        }
+
+        const transition = {
+            cost: cost,
+            params: this.metaStates[endState] ? this.metaStates[endState].params : {},
+            logic: transitionLogicCallback
+        };
+        if (!this.metaNeighbors[startState]) {
+            this.metaNeighbors[startState] = {};
+        }
+        this.metaNeighbors[startState][endState] = transition;
+    }
+
+    // compiles a given meta-state and all meta-states required to traverse to it into a regular set of states
+    _compileMetaState(metaStateName, params) {
+        if (!this.metaStates[metaStateName]) {
+            throw new Error(`Unknown meta-state: "${metaStateName}", you must add it to Drone first.`);
+        }
     }
 
     // define transition that is guaranteed to get us to this endState regardless of where
@@ -552,15 +661,15 @@ class StateMachine {
     addDefaultStateTransition(endState, transitionLogicCallback, cost = 1) {
 
         if (!this.stateTests[endState]) {
-        throw new Error(`End state "${endState}" does not exist.`);
+            throw new Error(`End state "${endState}" does not exist.`);
         }
 
         let transition = {
-        cost: cost,
-        logic: transitionLogicCallback
+            cost: cost,
+            logic: transitionLogicCallback
         };
         if (!this.neighbors[BAD_STATE]) {
-        this.neighbors[BAD_STATE] = {};
+            this.neighbors[BAD_STATE] = {};
         }
         this.neighbors[BAD_STATE][endState] = transition;
     }

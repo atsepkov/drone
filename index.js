@@ -12,8 +12,6 @@ const util = require('./src/utilities');
 
 puppeteer.use(StealthPlugin())
 
-const BAD_STATE = '< INVALID STATE >';
-
 /*
  * Base class for puppeteer-powered browsing automation library.
  */
@@ -128,8 +126,14 @@ class Drone {
           }
           resolve(this.config.cache[options.cache]);
         } catch (e) {
-          const errorImage = path.join(baseDir, 'latest-error.png')
-          await this.page.screenshot({path: errorImage})
+          try {
+            const errorImage = path.join(this.baseDir, 'latest-error.png')
+            await this.page.screenshot({path: errorImage})
+            console.error(`Screenshot saved to ${errorImage}`)
+          } catch (e1) {
+            // if we fail w/ screenshot, this wasn't a UI error to begin with (e.g. proxy, connection, etc.)
+            console.error('No screenshot available...')
+          }
           reject(e);
         }
       });
@@ -182,9 +186,9 @@ class Drone {
   }
 
   // computes shortest path to desired state using Dijkstra's algorithm.
-  async findPathToState(stateName) {
+  async findPathToState(stateName, params) {
     const currentState = await this.whereAmI();
-    return this.fsm.findPathToState(currentState, stateName);
+    return this.fsm.findPathToState(currentState, this.params, stateName, params);
   }
 
   // traverses a given path
@@ -195,8 +199,8 @@ class Drone {
   // navigates to correct state if we're not already in that state,
   // then (optionally) performs user-requested actions, and returns the result.
   // if navigation is impossible, throws an error.
-  async ensureState(stateName, actions, retries = 3) {
-    const path = await this.findPathToState(stateName);
+  async ensureState(stateName, params, actions, retries = 3) {
+    const path = await this.findPathToState(stateName, params);
     await this.traversePath(path, retries);
     if (typeof actions === 'function') {
       return await actions(this.page, this.params);
@@ -204,11 +208,11 @@ class Drone {
   }
 
   // similar to above, but is satisfied by more than one state, note that it prefers the state with the shortest path
-  async ensureEitherState(stateList, actions, retries = 3) {
+  async ensureEitherState(stateList, params, actions, retries = 3) {
     let cheapestCost = Infinity, cheapestPath = null, cheapestState;
     for (const state of stateList) {
       try {
-        const path = await this.findPathToState(state);
+        const path = await this.findPathToState(state, params);
         const cost = path.reduce((cost, transition) => {
           const [start, end] = transition;
           return cost + this.fsm.neighbors[start][end].cost
