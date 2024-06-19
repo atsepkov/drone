@@ -76,10 +76,63 @@ class Page {
     }
 
     /*
-     * wait a user-specified number of milliseconds before continuing
+     * wait until content inside the element changes
      */
-    async wait(ms) {
+    async waitForUpdate(element) {
+      if (!element) {
+          throw new Error('No element passed');
+      }
+      await element.evaluate((element) => {
+        return new Promise((resolve, reject) => {
+
+            // Options for the observer (which mutations to observe)
+            const config = { childList: true, subtree: true, characterData: true };
+
+            // Callback function to execute when mutations are observed
+            const callback = function(mutationsList, observer) {
+                // Assuming the content change is the condition to resolve
+                for (let mutation of mutationsList) {
+                    if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                        observer.disconnect();
+                        resolve();
+                        return;
+                    }
+                }
+            };
+
+            // Create an instance of MutationObserver
+            const observer = new MutationObserver(callback);
+
+            // Start observing the target node for configured mutations
+            observer.observe(element, config);
+
+            // Optional: timeout to stop observing if it takes too long
+            setTimeout(() => {
+                observer.disconnect();
+                reject(new Error('Timeout waiting for the element to update'));
+            }, 10000); // 10 seconds timeout
+        });
+      })
+    }
+
+    /*
+     * wait a user-specified number of milliseconds before continuing, if one number is provided,
+     * waits that number of milliseconds, if 2 are provided, waits a random interval between the two)
+     */
+    async wait(min, max) {
+        let ms = min
+        if (max) {
+            ms = Math.floor(Math.random() * (max - min)) + min
+        }
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /*
+     * Combines wait with click
+     */
+    async waitAndClick(selector, options) {
+        await this.waitForSelector(selector, options);
+        return this.click(selector, options);
     }
 
     /**
@@ -121,10 +174,16 @@ class Page {
             throw new Error('Invalid format, must be "json" or "text"');
         }
 
+        if (!element) {
+          throw new Error('No element passed in to scrape')
+        }
+
         if (format === 'json') {
             // if it's a table, we convert it to json
             if (await element.evaluate(e => e.tagName) === 'TABLE') {
                 return await util.tableToJson(this.page, element);
+            } else if (['UL', 'OL'].includes(await element.evaluate(e => e.tagName))) {
+                return await util.listToJson(this.page, element);
             }
             // if (element._remoteObject.className === 'HTMLTableElement') {
             //     return await util.tableToJson(this.page, element);
@@ -198,7 +257,7 @@ class Page {
                 // if text is a regex, we match it
                 if (
                     (options.text instanceof RegExp && options.text.test(innerText)) ||
-                    (innerText.trim() === options.text)
+                    (typeof options.text === 'string' && innerText.includes(options.text))
                 ) {
                     finalList.push(element);
                 }
@@ -209,7 +268,7 @@ class Page {
         // only text selector was passed
         let textSelected = options.text
             ? await this.allElementsWithText(options.text)
-            : null;
+            : [];
         return util.allowListClick(textSelected);
     }
 }

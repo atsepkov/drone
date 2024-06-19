@@ -24,6 +24,9 @@ class Drone {
     this.defaultTimeout = 30000;
     this.baseDir = __dirname;
     this.fsm = new StateMachine();
+
+    // State Machine Run Log
+    this.runLog = [];
   }
 
   // build the state machine in a single definition instead of having to call the methods in the right order
@@ -90,9 +93,28 @@ class Drone {
     await this.page.setViewport(options.viewport || this.config.resolutions[0]);
 
     if (options.debug) {
+      this.debug = options.debug;
       console.log('Base directory:', this.baseDir)
       console.log('Config:', this.config)
     }
+  }
+
+  // 
+  async disableAssetsFromLoading() {
+    if (!this.page) {
+      throw new Error(
+        'Page has not been initialized, perhaps you forgot to run drone.start()?',
+      );
+    }
+
+    await this.page.setRequestInterception(true)
+    this.page.on('request', (request) => {
+      if (['image', 'stylesheet', 'font'].includes(request.resourceType())) {
+        request.abort();
+      } else {
+        request.continue();
+      }
+    })
   }
 
   // call this to shut down the drone
@@ -104,6 +126,7 @@ class Drone {
     }
     await this.browser.close();
     this.writeConfig(this.baseDir, this.config);
+    this.writeRunLog(this.baseDir);
   }
 
   // returns absolute path to directory for the build, if directory doesn't exist, it will be created
@@ -153,6 +176,15 @@ class Drone {
     );
   }
 
+  writeRunLog(dirpath) {
+    const date = new Date();
+    fs.writeFileSync(
+      path.join(dirpath, `run-log-${date}.json`),
+      JSON.stringify(this.runLog, null, 2),
+    );
+  }
+
+
   // run this to execute a set of actions on the page
   async actions(logic, options = {}) {
     if (!this.browser) {
@@ -177,19 +209,49 @@ class Drone {
           }
           resolve(this.config.cache[options.cache]);
         } catch (e) {
+          const logEntry = {
+            type: 'error',
+            error: e.stack,
+          }
           try {
             const errorImage = path.join(this.baseDir, 'latest-error.png')
-            await this.page.screenshot({path: errorImage})
+            await this.page.screenshot({path: errorImage, fullPage: true})
+            logEntry.screenshot = errorImage
+            console.error(e.message)
             console.error(`Screenshot saved to ${errorImage}`)
           } catch (e1) {
             // if we fail w/ screenshot, this wasn't a UI error to begin with (e.g. proxy, connection, etc.)
             console.error('No screenshot available...')
           }
+          this.runLog.push(logEntry);
+          this.writeRunLog(this.baseDir);
           reject(e);
         }
       });
     }
-    return logic(this.page);
+
+    // not using cache
+    try {
+      return await logic(this.page);
+    } catch (e) {
+      const logEntry = {
+        type: 'error',
+        error: e.stack,
+      }
+      try {
+        const errorImage = path.join(this.baseDir, 'latest-error.png')
+        await this.page.screenshot({path: errorImage, fullPage: true})
+        logEntry.screenshot = errorImage
+        console.error(e.message)
+        console.error(`Screenshot saved to ${errorImage}`)
+      } catch (e1) {
+        // if we fail w/ screenshot, this wasn't a UI error to begin with (e.g. proxy, connection, etc.)
+        console.error('No screenshot available...')
+      }
+      this.runLog.push(logEntry);
+      this.writeRunLog(this.baseDir);
+      throw e
+    }
   }
     
   // state-machine logic
@@ -241,25 +303,40 @@ class Drone {
     this.fsm.onState(stateName, logicCallback);
   }
 
+  // logic to track state interaction for debugging purposes (State Machine Run Log)
+  _onStateEnter(stateName) {
+    if (this.debug) {
+      const index = this.runLog.length;
+      const screenshot = path.join(this.baseDir, `${index}_${stateName}.png`);
+
+      const logEntry = {
+        type: 'state load',
+        stateName,
+        screenshot,
+      }
+      this.runLog.push(logEntry);
+    }
+  }
+
   // figures out current base state and returns its name to the user, returns null if no states match
   async whereAmI() {
-    return this.fsm.getCurrentState(this.page, this.params);
+    return this.fsm.getCurrentState(this.page);
   }
 
   // same as above, but returns all layers
   async detailedWhereAmI() {
-    return this.fsm.getCurrentStateDetail(this.page, this.params);
+    return this.fsm.getCurrentStateDetail(this.page);
   }
 
   // computes shortest path to desired state using Dijkstra's algorithm.
   async findPathToState(stateName, params) {
     const currentState = await this.whereAmI();
-    return this.fsm.findPathToState(currentState, this.params, stateName, params);
+    return this.fsm.findPathToState(currentState, this.fsm.currentParams, stateName, params);
   }
 
   // traverses a given path
-  async traversePath(path, retries) {
-    return this.fsm.traversePath(path, retries, this.page, this.params);
+  async traversePath(path, retries, params) {
+    return this.fsm.traversePath(path, retries, this.page, params);
   }
 
   // navigates to correct state if we're not already in that state,
@@ -267,9 +344,9 @@ class Drone {
   // if navigation is impossible, throws an error.
   async ensureState(stateName, params, actions, retries = 3) {
     const path = await this.findPathToState(stateName, params);
-    await this.traversePath(path, retries);
+    await this.traversePath(path, retries, params);
     if (typeof actions === 'function') {
-      return await actions(this.page, this.params);
+      return await actions(this.page, params);
     }
   }
 
@@ -298,7 +375,7 @@ class Drone {
     if (!cheapestPath) {
       throw new Error(`No route exists from "${this.whereAmI()}" (current state) to either of requested states: ${stateList.join(', ')}`);
     }
-    await this.traversePath(cheapestPath, retries);
+    await this.traversePath(cheapestPath, retries, params);
     if (typeof actions === 'function') {
       return await actions(this.page, this.params, cheapestState);
     }
@@ -309,7 +386,7 @@ class Drone {
   shuffle(list) {
     list = list.slice(); // make a copy
     for (let i1 = list.length - 1; i1 > 0; i1--) {
-      const i2 = math.floor(Math.random() * (i1 + 1));
+      const i2 = Math.floor(Math.random() * (i1 + 1));
       const temp = list[i1];
       list[i1] = list[i2];
       list[i2] = temp;

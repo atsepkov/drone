@@ -53,6 +53,7 @@ const filterAsync = async (arr, callback) => {
 
 // return a list of elements that appear in both other lists
 const intersection = async (array1, array2, page) => {
+  if (!array1 && !array2) return [];
   if (!array1) return array2;
   if (!array2) return array1;
   return filterAsync(array1, async e1 => {
@@ -63,6 +64,54 @@ const intersection = async (array1, array2, page) => {
     return false;
   });
 };
+
+// converts ul or ol to JSON representation
+const listToJson = async (page, list, options) => {
+  const opts = {
+    ...{
+      allowHTML: false,
+    },
+    ...options,
+  };
+
+  return page.evaluate(
+    (list, opts) => {
+      const notNull = function(value) {
+        return value !== undefined && value !== null;
+      };
+
+      const cellValues = function(cell) {
+        let value;
+        if (opts.allowHTML) {
+          value = cell.innerHTML.trim();
+        } else {
+          value = cell.innerText.trim();
+        }
+        return value;
+      };
+
+      const children = (element, selector) => {
+        return Array.from(element.querySelectorAll(`:scope > ${selector}`));
+      };
+
+      const scanList = list => {
+        let result = [];
+        list.forEach(function(cell) {
+          result.push(cellValues(cell));
+        });
+        return result;
+      };
+
+      const construct = function(list) {
+        return scanList(children(list, 'li'));
+      };
+
+      return construct(list);
+    },
+    list,
+    opts,
+  );
+}
 
 // convert table to JSON representation
 const tableToJson = async (page, table, options) => {
@@ -200,15 +249,37 @@ const tableToJson = async (page, table, options) => {
             }
           });
         });
+        
+        // if headings repeat, add dedupe suffix
+        const seen = {}
+        result.forEach((e, i) => {
+          if (seen[e]) {
+            seen[e]++
+            result[i] = e + ` (${seen[e]})` 
+          } else {
+            seen[e] = 1
+          }
+        })
+
         return result;
       };
 
       const construct = function(table, headings) {
         let result = [];
         let tmpArray = scanRows(children(table, 'tbody > tr'));
-        // if headings are empty, use indexes as keys
-        if (headings.length === 0) {
-          headings = Array.from(Array(tmpArray.length).keys()).map(String);
+        let footer = scanRows(children(table, 'tfoot > tr'));
+        let needFooter = false;
+        if (footer.length > 0) {
+          if (footer[0].length !== tmpArray[0].length) {
+            needFooter = true;
+          } else {
+            tmpArray = tmpArray.concat(footer);
+          }
+        }
+
+        // if headings don't align, use indexes as keys
+        if (headings.length !== tmpArray[0].length) {
+          headings = Array.from(Array(tmpArray[0].length).keys()).map(String);
         }
         tmpArray.forEach(function(row) {
           if (notNull(row)) {
@@ -216,6 +287,14 @@ const tableToJson = async (page, table, options) => {
             result[result.length] = txt;
           }
         });
+        if (needFooter) { // only runs if footer size is different from body
+          let cols = Array.from(footer.length).keys().map(String);
+          footer.forEach(function(row) {
+            if (notNull(row)) {
+              result[result.length] = arraysToHash(cols, row);
+            }
+          })
+        }
         return result;
       };
 
@@ -252,6 +331,10 @@ const isSubstate = (subState, superState) => {
   return true;
 };
 
+const isEqual = (a, b) => {
+  return JSON.stringify(a) === JSON.stringify(b);
+};
+
 const filterByLayer = (states, filteredProps) => {
   return states.filter(state => {
     for (const [key, val] of Object.entries(filteredProps)) {
@@ -270,9 +353,11 @@ module.exports = {
   getInstanceMethodNames,
   filterAsync,
   intersection,
+  listToJson,
   tableToJson,
   stateToString,
   stringToState,
   isSubstate,
+  isEqual,
   filterByLayer,
 };

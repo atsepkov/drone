@@ -92,6 +92,8 @@ class StateMachine {
         // meta states
         this.metaStates = {};           // meta states are states that are not yet materialized (this is stateTests for meta states)
         this.metaNeighbors = {};        // meta state transitions
+        this.params = {};               // maps params to meta state transitions that can set them
+        this._currentParams = {};       // used to 'cache' current params
 
         // composite states;
         this.compositeFragments = {};   // tracks added fragments (to track duplicate declarations and base states)
@@ -121,6 +123,10 @@ class StateMachine {
             statesByLayer[layer] = Object.keys(this.layers[layer]);
         });
         return statesByLayer;
+    }
+
+    get currentParams() {
+        return { ...this._currentParams };
     }
 
     // returns a list of expanded states that match passed in filter, if no filter is passed, returns all expanded states.
@@ -260,15 +266,15 @@ class StateMachine {
     }
 
     // figures out current state and returns its name to the user, returns null if no states match
-    async getCurrentState(page, params) {
+    async getCurrentState(page) {
         // if cached state is correct, return that
-        if (this._currentState && await this.stateTests[this._currentState](page, params)) {
+        if (this._currentState && await this.stateTests[this._currentState](page, this._currentParams)) {
             return this._currentState;
         }
 
         // otherwise loop through all states to find the correct one
         for (const stateName of this.states) {
-            if (await this.stateTests[stateName](page, params)) {
+            if (await this.stateTests[stateName](page, this._currentParams)) {
                 return stateName;
             }
         }
@@ -276,14 +282,14 @@ class StateMachine {
     }
 
     // similar to getCurrentState, but returns all layers (a composite version of getCurrentState)
-    async getCurrentStateDetail(page, params) {
-        const baseState = await this.getCurrentState(page, params);
+    async getCurrentStateDetail(page) {
+        const baseState = await this.getCurrentState(page, this._currentParams);
         const isCorrectState = (layer, state) => {
             if (state.baseStateList.includes(baseState)) {
                 if (this._isLastKnownOccluded(layer)) {
                     return true; // assume correct state if untestable
                 }
-                if (state.testCriteriaCallback(page, params)) {
+                if (state.testCriteriaCallback(page, this._currentParams)) {
                     return true; // passed test
                 }
             }
@@ -349,16 +355,28 @@ class StateMachine {
         return false;
     }
 
+    // compiles meta-states needed to traverse to a given state into our state machine
+    compileMetaStates(endState, params) {
+        
+    }
+
     // computes shortest path to desired state using Dijkstra's algorithm.
     async findPathToState(startState, startParams, endState, endParams) {
-        if (!this.states.includes(endState)) {
+        if (!this.stateTests[startState] && !this.metaStates[startState]) {
+            throw new Error(`Unknown state: "${startState}", you must add this state to Drone first.`);
+        } else if (!this.stateTests[endState] && !this.metaStates[endState]) {
             throw new Error(`Unknown state: "${endState}", you must add this state to Drone first.`)
-        }
-        if (!this.neighbors[startState]) {
-            startState = BAD_STATE; // legit state, but no path exists out of it
         }
         if (startState === endState) {
             return []; // already there
+        }
+        if (!this.neighbors[startState] && !this.metaNeighbors[startState]) {
+            startState = BAD_STATE; // legit state, but no path exists out of it
+        }
+
+        // check if we need to traverse any meta-states
+        if ((startParams && !util.isEqual(this._currentParams, startParams))) {
+            // startParams have not yet been compiled into our state machine
         }
 
         const unvisited = [...this.states];
@@ -624,8 +642,8 @@ class StateMachine {
         const startParams = this.metaStates[startState] ? this.metaStates[startState].params : {};
         const endParams = this.metaStates[endState] ? this.metaStates[endState].params : {};
         // the transition should set all params present in endState but missing in startState
-        const missingParams = Object.keys(endParams).filter(param => !startParams[param]);
-        const unusedParams = this._getUnusedParams(transitionLogicCallback, missingParams);
+        const newParams = Object.keys(endParams).filter(param => !startParams[param]);
+        const unusedParams = this._getUnusedParams(transitionLogicCallback, newParams);
         if (unusedParams.length) {
             throw new Error(`Transition from "${startState}" to "${endState}" does not use all required params: ${unusedParams.join(', ')}.`);
         }
@@ -638,6 +656,14 @@ class StateMachine {
                 throw new Error(`Transition from "${startState}" to itself must update at least one param.`);
             }
         }
+
+        // document params that are being set by this transition
+        newParams.forEach(param => {
+            if (!this.params[param]) {
+                this.params[param] = [];
+            }
+            this.params[param].push({ startState, endState });
+        });
 
         const transition = {
             cost: cost,
