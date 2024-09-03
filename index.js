@@ -213,6 +213,7 @@ class Drone {
             type: 'error',
             error: e.stack,
           }
+          console.error('Page url:', this.page.url())
           try {
             const errorImage = path.join(this.baseDir, 'latest-error.png')
             await this.page.screenshot({path: errorImage, fullPage: true})
@@ -221,6 +222,7 @@ class Drone {
             console.error(`Screenshot saved to ${errorImage}`)
           } catch (e1) {
             // if we fail w/ screenshot, this wasn't a UI error to begin with (e.g. proxy, connection, etc.)
+            console.error(e.message)
             console.error('No screenshot available...')
           }
           this.runLog.push(logEntry);
